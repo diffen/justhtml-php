@@ -1,0 +1,213 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+$root = dirname(__DIR__);
+$autoload = $root . '/vendor/autoload.php';
+if (file_exists($autoload)) {
+    require_once $autoload;
+} else {
+    $required = [
+        'Str.php',
+        'Errors.php',
+        'Constants.php',
+        'Entities.php',
+        'Tokens.php',
+        'Context.php',
+        'Markdown.php',
+        'Selector.php',
+        'Stream.php',
+        'Node.php',
+        'Serialize.php',
+        'TreeBuilderUtils.php',
+        'TreeBuilderModes.php',
+        'TokenizerStates.php',
+        'Tokenizer.php',
+        'TreeBuilder.php',
+        'Encoding.php',
+        'JustHTML.php',
+    ];
+
+    foreach ($required as $file) {
+        require_once $root . '/src/JustHTML/' . $file;
+    }
+}
+
+use JustHTML\JustHTML;
+use JustHTML\SelectorError;
+
+function print_usage(int $code): void
+{
+    $usage = <<<TEXT
+Usage: justhtml [options] <path|->
+
+Options:
+  --selector <css>   CSS selector (defaults to document root)
+  --format <fmt>     html, text, or markdown (default: html)
+  --first            Only output first matching node
+  --separator <s>    Text-only: join string between text nodes (default: single space)
+  --strip            Text-only: strip each text node and drop empty segments (default)
+  --no-strip         Text-only: preserve text node whitespace
+  --version          Print version information
+  -h, --help         Show this help
+TEXT;
+    $stream = $code === 0 ? STDOUT : STDERR;
+    fwrite($stream, $usage . PHP_EOL);
+    exit($code);
+}
+
+$argv = $_SERVER['argv'];
+$argc = $_SERVER['argc'];
+
+$selector = null;
+$format = 'html';
+$first = false;
+$separator = ' ';
+$strip = true;
+$path = null;
+
+for ($i = 1; $i < $argc; $i++) {
+    $arg = $argv[$i];
+
+    if ($arg === '-h' || $arg === '--help') {
+        print_usage(0);
+    }
+
+    if ($arg === '--version') {
+        fwrite(STDOUT, "justhtml dev\n");
+        exit(0);
+    }
+
+    if ($arg === '--selector') {
+        if ($i + 1 >= $argc) {
+            fwrite(STDERR, "Missing value for --selector\n");
+            exit(1);
+        }
+        $selector = $argv[++$i];
+        continue;
+    }
+    if (strpos($arg, '--selector=') === 0) {
+        $selector = substr($arg, strlen('--selector='));
+        continue;
+    }
+
+    if ($arg === '--format') {
+        if ($i + 1 >= $argc) {
+            fwrite(STDERR, "Missing value for --format\n");
+            exit(1);
+        }
+        $format = $argv[++$i];
+        continue;
+    }
+    if (strpos($arg, '--format=') === 0) {
+        $format = substr($arg, strlen('--format='));
+        continue;
+    }
+
+    if ($arg === '--first') {
+        $first = true;
+        continue;
+    }
+
+    if ($arg === '--separator') {
+        if ($i + 1 >= $argc) {
+            fwrite(STDERR, "Missing value for --separator\n");
+            exit(1);
+        }
+        $separator = $argv[++$i];
+        continue;
+    }
+    if (strpos($arg, '--separator=') === 0) {
+        $separator = substr($arg, strlen('--separator='));
+        continue;
+    }
+
+    if ($arg === '--strip') {
+        $strip = true;
+        continue;
+    }
+
+    if ($arg === '--no-strip') {
+        $strip = false;
+        continue;
+    }
+
+    if (strpos($arg, '--') === 0) {
+        fwrite(STDERR, "Unknown option: {$arg}\n");
+        print_usage(1);
+    }
+
+    if ($path === null) {
+        $path = $arg;
+        continue;
+    }
+
+    fwrite(STDERR, "Unexpected argument: {$arg}\n");
+    print_usage(1);
+}
+
+if ($path === null) {
+    print_usage(1);
+}
+
+if ($path === '-') {
+    $html = stream_get_contents(STDIN);
+    if ($html === false) {
+        fwrite(STDERR, "Failed to read from stdin\n");
+        exit(1);
+    }
+} else {
+    $html = file_get_contents($path);
+    if ($html === false) {
+        fwrite(STDERR, "Failed to read file: {$path}\n");
+        exit(1);
+    }
+}
+
+$doc = new JustHTML($html);
+
+try {
+    $nodes = $selector ? $doc->query($selector) : [$doc->root];
+} catch (SelectorError $e) {
+    fwrite(STDERR, $e->getMessage() . PHP_EOL);
+    exit(2);
+}
+
+if (!$nodes) {
+    exit(1);
+}
+
+if ($first) {
+    $nodes = [$nodes[0]];
+}
+
+if ($format === 'html') {
+    $outputs = [];
+    foreach ($nodes as $node) {
+        $outputs[] = $node->toHtml();
+    }
+    fwrite(STDOUT, implode("\n", $outputs) . PHP_EOL);
+    exit(0);
+}
+
+if ($format === 'text') {
+    $outputs = [];
+    foreach ($nodes as $node) {
+        $outputs[] = $node->toText($separator, $strip);
+    }
+    fwrite(STDOUT, implode("\n", $outputs) . PHP_EOL);
+    exit(0);
+}
+
+if ($format === 'markdown') {
+    $outputs = [];
+    foreach ($nodes as $node) {
+        $outputs[] = $node->toMarkdown();
+    }
+    fwrite(STDOUT, implode("\n\n", $outputs) . PHP_EOL);
+    exit(0);
+}
+
+fwrite(STDERR, "Unknown format: {$format}\n");
+print_usage(1);

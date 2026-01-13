@@ -1,0 +1,24 @@
+{
+  "name": "diffen/justhtml-php",
+  "description": "Pure-PHP HTML5 parser (JustHTML port) with html5lib compliance",
+  "type": "library",
+  "license": "MIT",
+  "require": {
+    "php": ">=7.4"
+  },
+  "autoload": {
+    "psr-4": {
+      "JustHTML\\": "src/JustHTML/"
+    }
+  },
+  "bin": [
+    "bin/justhtml"
+  ],
+  "keywords": [
+    "html5",
+    "parser",
+    "dom",
+    "selector",
+    "justhtml"
+  ]
+}
