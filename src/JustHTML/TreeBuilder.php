@@ -166,15 +166,17 @@ class TreeBuilder
 
     private function _has_element_in_scope(string $target, ?array $terminators = null, bool $check_integration_points = true): bool
     {
+        $elements = $this->open_elements;
         $terminators = $terminators ?? Constants::DEFAULT_SCOPE_TERMINATORS;
-        for ($i = count($this->open_elements) - 1; $i >= 0; $i--) {
-            $node = $this->open_elements[$i];
-            if ($node->name === $target) {
+        for ($i = count($elements) - 1; $i >= 0; $i--) {
+            $node = $elements[$i];
+            $name = $node->name;
+            if ($name === $target) {
                 return true;
             }
             $ns = $node->namespace;
             if ($ns === null || $ns === 'html') {
-                if (isset($terminators[$node->name])) {
+                if (isset($terminators[$name])) {
                     return false;
                 }
             } elseif ($check_integration_points && ($this->_is_html_integration_point($node) || $this->_is_mathml_text_integration_point($node))) {
@@ -224,9 +226,10 @@ class TreeBuilder
 
     public function processToken($token): int
     {
+        $elements = $this->open_elements;
         if ($token instanceof DoctypeToken) {
-            if ($this->open_elements) {
-                $current = $this->open_elements[count($this->open_elements) - 1];
+            if ($elements) {
+                $current = $elements[count($elements) - 1];
                 if ($current->namespace !== null && $current->namespace !== 'html') {
                     $this->_parse_error('unexpected-doctype');
                     return TokenSinkResult::Continue;
@@ -240,7 +243,8 @@ class TreeBuilder
         $mode_handlers = $this->_MODE_HANDLERS;
 
         while (true) {
-            $current_node = $this->open_elements ? $this->open_elements[count($this->open_elements) - 1] : null;
+            $elements = $this->open_elements;
+            $current_node = $elements ? $elements[count($elements) - 1] : null;
             $is_html_namespace = $current_node === null || $current_node->namespace === null || $current_node->namespace === 'html';
 
             if ($force_html_mode || $is_html_namespace) {
