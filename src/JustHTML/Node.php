@@ -22,7 +22,7 @@ class SimpleDomNode
         $this->name = $name;
         $this->data = $data;
 
-        if (Str::startsWith($name, '#') || $name === '!doctype') {
+        if (isset($name[0]) && $name[0] === '#' || $name === '!doctype') {
             $this->namespace = $namespace;
             if ($name === '#comment' || $name === '!doctype') {
                 $this->children = null;

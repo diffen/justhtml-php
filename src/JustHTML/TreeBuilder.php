@@ -254,11 +254,11 @@ class TreeBuilder
                 if ($current_token instanceof CharacterTokens) {
                     if ($this->_is_mathml_text_integration_point($current)) {
                         $data = $current_token->data;
-                        if (Str::contains($data, "\x00")) {
+                        if (strpos($data, "\x00") !== false) {
                             $this->_parse_error('invalid-codepoint');
                             $data = str_replace("\x00", '', $data);
                         }
-                        if (Str::contains($data, "\x0c")) {
+                        if (strpos($data, "\x0c") !== false) {
                             $this->_parse_error('invalid-codepoint');
                             $data = str_replace("\x0c", '', $data);
                         }
@@ -1371,7 +1371,7 @@ class TreeBuilder
         }
 
         if ($this->mode === InsertionMode::IN_BODY) {
-            if (Str::contains($data, "\x00")) {
+            if (strpos($data, "\x00") !== false) {
                 $this->_parse_error('invalid-codepoint');
                 $data = str_replace("\x00", '', $data);
             }

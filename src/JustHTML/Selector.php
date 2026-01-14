@@ -657,7 +657,8 @@ final class SelectorMatcher
         if (!is_object($node) || !property_exists($node, 'name')) {
             return false;
         }
-        if (Str::startsWith((string)$node->name, '#')) {
+        $nodeName = (string)$node->name;
+        if (isset($nodeName[0]) && $nodeName[0] === '#') {
             return false;
         }
 
@@ -728,19 +729,21 @@ final class SelectorMatcher
         }
 
         if ($op === '|=') {
-            return $attrValue === $value || Str::startsWith($attrValue, $value . '-');
+            $prefix = $value . '-';
+            return $attrValue === $value || (strlen($attrValue) >= strlen($prefix) && strncmp($attrValue, $prefix, strlen($prefix)) === 0);
         }
 
         if ($op === '^=') {
-            return $value !== '' && Str::startsWith($attrValue, $value);
+            return $value !== '' && strlen($attrValue) >= strlen($value) && strncmp($attrValue, $value, strlen($value)) === 0;
         }
 
         if ($op === '$=') {
-            return $value !== '' && Str::endsWith($attrValue, $value);
+            $len = strlen($value);
+            return $value !== '' && $len <= strlen($attrValue) && substr($attrValue, -$len) === $value;
         }
 
         if ($op === '*=') {
-            return $value !== '' && Str::contains($attrValue, $value);
+            return $value !== '' && strpos($attrValue, $value) !== false;
         }
 
         return false;
@@ -786,7 +789,7 @@ final class SelectorMatcher
                     if ($child->data && trim((string)$child->data) !== '') {
                         return false;
                     }
-                } elseif (!Str::startsWith((string)$child->name, '#')) {
+                } elseif (!(isset($child->name[0]) && $child->name[0] === '#')) {
                     return false;
                 }
             }
@@ -828,7 +831,7 @@ final class SelectorMatcher
         }
         $elements = [];
         foreach ($parent->children as $child) {
-            if (property_exists($child, 'name') && !Str::startsWith((string)$child->name, '#')) {
+            if (property_exists($child, 'name') && !(isset($child->name[0]) && $child->name[0] === '#')) {
                 $elements[] = $child;
             }
         }
@@ -847,7 +850,7 @@ final class SelectorMatcher
             if ($child === $node) {
                 return $prev;
             }
-            if (property_exists($child, 'name') && !Str::startsWith((string)$child->name, '#')) {
+            if (property_exists($child, 'name') && !(isset($child->name[0]) && $child->name[0] === '#')) {
                 $prev = $child;
             }
         }
@@ -1053,7 +1056,7 @@ final class Selector
     {
         if ($node->hasChildNodes()) {
             foreach ($node->children as $child) {
-                if (property_exists($child, 'name') && !Str::startsWith((string)$child->name, '#')) {
+                if (property_exists($child, 'name') && !(isset($child->name[0]) && $child->name[0] === '#')) {
                     if (self::matcher()->matches($child, $selector)) {
                         $results[] = $child;
                     }

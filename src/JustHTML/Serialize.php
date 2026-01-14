@@ -19,7 +19,7 @@ final class Serialize
         if ($value === null) {
             return '"';
         }
-        if (Str::contains($value, '"') && !Str::contains($value, "'")) {
+        if (strpos($value, '"') !== false && strpos($value, "'") === false) {
             return "'";
         }
         return '"';

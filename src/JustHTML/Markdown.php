@@ -217,7 +217,7 @@ final class Markdown
             return;
         }
 
-        if (Str::startsWith($name, '#')) {
+        if (isset($name[0]) && $name[0] === '#') {
             if (!empty($node->children)) {
                 foreach ($node->children as $child) {
                     self::toMarkdownWalk($child, $builder, $preserveWhitespace, $listDepth);
