@@ -29,6 +29,23 @@ $doc = new JustHTML('<main><p>Hello</p></main>');
 echo $doc->toHtml();
 ```
 
+## Why use JustHTML?
+
+### 1. Correct HTML5 parsing
+
+- Passes the html5lib test suite (tree builder, tokenizer, serializer, encoding).
+- Mirrors browser error handling for malformed HTML.
+
+### 2. PHP-native and portable
+
+- Pure PHP 7.4+ with no extensions required.
+- Easy to debug and vendor in any PHP project.
+
+### 3. Query and output utilities
+
+- CSS selectors via `query()` and `matches()`.
+- HTML, text, and Markdown output helpers for common workflows.
+
 ## Features
 
 - HTML5-compliant parsing with html5lib test coverage
@@ -79,11 +96,11 @@ Benchmarks here were run on PHP 8.5.1 with libxml 2.9.13. Run
 `php benchmarks/performance.php --dir benchmarks/fixtures/commoncrawl-1k --iterations 3 --markdown`
 to regenerate.
 
-| Parser | Compliance | Avg ms/doc | Selectors | Notes |
-|--------|------------|-----------:|-----------|-------|
+| Parser | Spec compliance (html5lib-tests pass rate) | Speed: Avg ms/doc (lower is better) | Selectors | Notes |
+|--------|---------------------------------------------|------------------------------------:|-----------|-------|
 | **JustHTML** | 1743/1743 (100%) | 6.99 | CSS | Full spec compliance |
-| DOMDocument (libxml) | 54/1743 (3.1%) | 1.21 | XPath | Baseline, not HTML5-correct |
 | DOM\HTMLDocument | 831/1743 (47.7%) | 0.72 | CSS | HTML5 DOM (new DOM extension) |
+| DOMDocument (libxml) | 54/1743 (3.1%) | 1.21 | XPath | Baseline, not HTML5-correct |
 | masterminds/html5 | 75/1743 (4.3%) | 5.67 | XPath | HTML5 parser, low compliance |
 | voku/simple_html_dom | 29/1743 (1.7%) | 3.53 | CSS | Tolerant DOM wrapper |
 | symfony/dom-crawler | 54/1743 (3.1%) | 5.41 | CSS/XPath | Wrapper over DOMDocument (libxml) |
