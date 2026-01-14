@@ -11,6 +11,7 @@ function perf_parser_available(string $name): bool
     switch ($name) {
         case 'justhtml':
         case 'domdocument':
+        case 'dom/html-document':
             return true;
         case 'masterminds/html5':
             return class_exists('Masterminds\\HTML5');
@@ -30,6 +31,7 @@ function perf_parser_list(): array
     return [
         'justhtml',
         'domdocument',
+        'dom/html-document',
         'masterminds/html5',
         'voku/simple_html_dom',
         'paquettg/php-html-parser',
@@ -61,6 +63,18 @@ function perf_parse_domdocument(string $html): void
     $doc = new \DOMDocument();
     $prev = libxml_use_internal_errors(true);
     $doc->loadHTML($html);
+    libxml_clear_errors();
+    libxml_use_internal_errors($prev);
+}
+
+function perf_parse_dom_html_document(string $html): void
+{
+    if (!class_exists('DOM\\HTMLDocument')) {
+        perf_parse_domdocument($html);
+        return;
+    }
+    $prev = libxml_use_internal_errors(true);
+    \DOM\HTMLDocument::createFromString($html);
     libxml_clear_errors();
     libxml_use_internal_errors($prev);
 }
@@ -112,6 +126,8 @@ function run_perf(string $parser, array $fixtures, int $iterations, bool $measur
                 perf_parse_justhtml($html);
             } elseif ($parser === 'domdocument') {
                 perf_parse_domdocument($html);
+            } elseif ($parser === 'dom/html-document') {
+                perf_parse_dom_html_document($html);
             } elseif ($parser === 'masterminds/html5') {
                 perf_parse_masterminds($html);
             } elseif ($parser === 'symfony/dom-crawler') {

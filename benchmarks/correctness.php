@@ -15,6 +15,7 @@ function parser_available(string $name): bool
     switch ($name) {
         case 'justhtml':
         case 'domdocument':
+        case 'dom/html-document':
             return true;
         case 'masterminds/html5':
             return class_exists('Masterminds\\HTML5');
@@ -77,6 +78,39 @@ function domdocument_from_html(string $html, ?FragmentContext $fragment_context)
 function parse_with_domdocument(string $html, ?FragmentContext $fragment_context): string
 {
     $node = domdocument_from_html($html, $fragment_context);
+    return DomTestSerializer::toTestFormat($node);
+}
+
+function dom_html_document_from_html(string $html, ?FragmentContext $fragment_context)
+{
+    if (!class_exists('DOM\\HTMLDocument')) {
+        return domdocument_from_html($html, $fragment_context);
+    }
+    $prev = libxml_use_internal_errors(true);
+    if ($fragment_context !== null) {
+        $tag = $fragment_context->tagName;
+        $wrapped = '<' . $tag . '>' . $html . '</' . $tag . '>';
+        $doc = \DOM\HTMLDocument::createFromString($wrapped);
+        $container = $doc->getElementsByTagName($tag)->item(0);
+        $fragment = $doc->createDocumentFragment();
+        if ($container) {
+            foreach ($container->childNodes as $child) {
+                $fragment->appendChild($child->cloneNode(true));
+            }
+        }
+        libxml_clear_errors();
+        libxml_use_internal_errors($prev);
+        return $fragment;
+    }
+    $doc = \DOM\HTMLDocument::createFromString($html);
+    libxml_clear_errors();
+    libxml_use_internal_errors($prev);
+    return $doc;
+}
+
+function parse_with_dom_html_document(string $html, ?FragmentContext $fragment_context): string
+{
+    $node = dom_html_document_from_html($html, $fragment_context);
     return DomTestSerializer::toTestFormat($node);
 }
 
@@ -169,6 +203,7 @@ function parser_list(): array
     return [
         'justhtml',
         'domdocument',
+        'dom/html-document',
         'masterminds/html5',
         'voku/simple_html_dom',
         'paquettg/php-html-parser',
@@ -203,6 +238,8 @@ function run_correctness(string $parser_name, string $dir, ?int $limit = null): 
                     $actual = parse_with_justhtml($test['data'], $test['fragment_context'], $test['xml_coercion'], $test['iframe_srcdoc']);
                 } elseif ($parser_name === 'domdocument') {
                     $actual = parse_with_domdocument($test['data'], $test['fragment_context']);
+                } elseif ($parser_name === 'dom/html-document') {
+                    $actual = parse_with_dom_html_document($test['data'], $test['fragment_context']);
                 } elseif ($parser_name === 'masterminds/html5') {
                     $actual = parse_with_masterminds($test['data'], $test['fragment_context']);
                 } elseif ($parser_name === 'symfony/dom-crawler') {

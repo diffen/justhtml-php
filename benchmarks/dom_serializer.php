@@ -6,9 +6,9 @@ use JustHTML\Constants;
 
 final class DomTestSerializer
 {
-    public static function toTestFormat(\DOMNode $node): string
+    public static function toTestFormat($node): string
     {
-        if ($node instanceof \DOMDocument || $node instanceof \DOMDocumentFragment) {
+        if (self::isDocumentNode($node)) {
             $parts = [];
             foreach ($node->childNodes as $child) {
                 $line = self::nodeToTestFormat($child, 0);
@@ -21,7 +21,7 @@ final class DomTestSerializer
         return self::nodeToTestFormat($node, 0);
     }
 
-    private static function nodeToTestFormat(\DOMNode $node, int $indent): string
+    private static function nodeToTestFormat($node, int $indent): string
     {
         switch ($node->nodeType) {
             case XML_TEXT_NODE:
@@ -37,7 +37,7 @@ final class DomTestSerializer
         }
     }
 
-    private static function elementToTestFormat(\DOMElement $element, int $indent): string
+    private static function elementToTestFormat($element, int $indent): string
     {
         $line = '| ' . str_repeat(' ', $indent) . '<' . self::qualifiedName($element) . '>';
         $attributeLines = self::attrsToTestFormat($element, $indent);
@@ -59,7 +59,7 @@ final class DomTestSerializer
         return implode("\n", $sections);
     }
 
-    private static function qualifiedName(\DOMElement $element): string
+    private static function qualifiedName($element): string
     {
         $namespace = $element->namespaceURI;
         if ($namespace === 'http://www.w3.org/2000/svg') {
@@ -68,11 +68,14 @@ final class DomTestSerializer
         if ($namespace === 'http://www.w3.org/1998/Math/MathML') {
             return 'math ' . $element->localName;
         }
-        return $element->tagName;
+        if ($namespace === null || $namespace === 'http://www.w3.org/1999/xhtml') {
+            return strtolower((string)$element->tagName);
+        }
+        return (string)$element->tagName;
     }
 
     /** @return array<int, string> */
-    private static function attrsToTestFormat(\DOMElement $element, int $indent): array
+    private static function attrsToTestFormat($element, int $indent): array
     {
         if (!$element->hasAttributes()) {
             return [];
@@ -82,12 +85,13 @@ final class DomTestSerializer
         $padding = str_repeat(' ', $indent + 2);
         $displayAttrs = [];
         $namespace = $element->namespaceURI;
+        $isHtml = $namespace === null || $namespace === 'http://www.w3.org/1999/xhtml';
 
         foreach ($element->attributes as $attr) {
             $name = $attr->nodeName;
             $value = $attr->nodeValue ?? '';
-            $displayName = $name;
-            if ($namespace && $namespace !== 'http://www.w3.org/1999/xhtml') {
+            $displayName = $isHtml ? strtolower($name) : $name;
+            if (!$isHtml) {
                 $lowerName = strtolower($name);
                 if (isset(Constants::FOREIGN_ATTRIBUTE_ADJUSTMENTS[$lowerName])) {
                     $displayName = str_replace(':', ' ', $name);
@@ -107,7 +111,7 @@ final class DomTestSerializer
         return $formatted;
     }
 
-    private static function doctypeToTestFormat(\DOMNode $node): string
+    private static function doctypeToTestFormat($node): string
     {
         $name = $node->name ?? '';
         $publicId = property_exists($node, 'publicId') ? $node->publicId : null;
@@ -129,5 +133,19 @@ final class DomTestSerializer
 
         $parts[] = '>';
         return implode('', $parts);
+    }
+
+    private static function isDocumentNode($node): bool
+    {
+        if ($node instanceof \DOMDocument || $node instanceof \DOMDocumentFragment) {
+            return true;
+        }
+        if (class_exists('Dom\\Document') && $node instanceof \Dom\Document) {
+            return true;
+        }
+        if (class_exists('Dom\\DocumentFragment') && $node instanceof \Dom\DocumentFragment) {
+            return true;
+        }
+        return false;
     }
 }

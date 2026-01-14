@@ -44,6 +44,7 @@ Available parser labels in scripts:
 
 - `justhtml`
 - `domdocument`
+- `dom/html-document`
 - `masterminds/html5`
 - `voku/simple_html_dom`
 - `paquettg/php-html-parser`
