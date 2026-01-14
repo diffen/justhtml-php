@@ -714,8 +714,14 @@ class TreeBuilder
             return;
         }
         $marker = Constants::formatMarker();
+        $openSet = [];
+        if ($this->open_elements) {
+            foreach ($this->open_elements as $node) {
+                $openSet[spl_object_id($node)] = true;
+            }
+        }
         $last_entry = $this->active_formatting[count($this->active_formatting) - 1];
-        if ($last_entry === $marker || in_array($last_entry['node'], $this->open_elements, true)) {
+        if ($last_entry === $marker || isset($openSet[spl_object_id($last_entry['node'])])) {
             return;
         }
 
@@ -726,7 +732,7 @@ class TreeBuilder
                 break;
             }
             $entry = $this->active_formatting[$index];
-            if ($entry === $marker || in_array($entry['node'], $this->open_elements, true)) {
+            if ($entry === $marker || isset($openSet[spl_object_id($entry['node'])])) {
                 $index += 1;
                 break;
             }
