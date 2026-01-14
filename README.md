@@ -61,6 +61,16 @@ Expected output:
 - Streaming tokenizer API
 - Fragment parsing and strict error mode
 
+## Detailed example (Wikipedia Earth)
+
+```sh
+php examples/wikipedia_earth_demo.php
+```
+
+The script loads `benchmarks/fixtures/wikipedia-earth.html` and prints a
+walkthrough of selectors, attributes, classes, inner/outer HTML, text, and
+Markdown extraction.
+
 ## CSS selectors
 
 ```php
@@ -152,6 +162,12 @@ See `benchmarks/README.md` for parser install instructions and details.
 ```sh
 git submodule update --init --recursive
 php run_tests.php
+```
+
+Test against multiple PHP versions via Docker:
+
+```sh
+scripts/test-matrix-docker.sh
 ```
 
 ## Notes

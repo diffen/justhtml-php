@@ -144,6 +144,11 @@ class SimpleDomNode
         return Selector::query($this, $selector);
     }
 
+    public function matches(string $selector): bool
+    {
+        return Selector::matches($this, $selector);
+    }
+
     public function toTestFormat(int $indent = 0): string
     {
         return Serialize::toTestFormat($this, $indent);
@@ -313,5 +318,10 @@ final class TextNode
     public function children(): array
     {
         return [];
+    }
+
+    public function matches(string $selector): bool
+    {
+        return Selector::matches($this, $selector);
     }
 }
