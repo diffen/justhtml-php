@@ -26,7 +26,13 @@ require_once __DIR__ . '/vendor/autoload.php';
 use JustHTML\JustHTML;
 
 $doc = new JustHTML('<main><p>Hello</p></main>');
-echo $doc->toHtml();
+echo $doc->toHtml(0, 2, false);
+```
+
+Expected output:
+
+```text
+<main><p>Hello</p></main>
 ```
 
 ## Why use JustHTML?
@@ -58,7 +64,41 @@ echo $doc->toHtml();
 ## CSS selectors
 
 ```php
-$nodes = $doc->query('main p');
+$nodes = $doc->query('main p'); // Returns an array of nodes
+echo $nodes[0]->toText() . "\n";
+echo ($nodes[0]->matches('main > p') ? 'true' : 'false') . "\n";
+echo ($nodes[0]->matches('article p') ? 'true' : 'false') . "\n";
+```
+
+Expected output:
+
+```text
+Hello
+true
+false
+```
+
+## Parsing and extraction
+
+```php
+$html = '<article><h1>Title</h1><p class="lead">Intro</p><a href="/a">Read</a></article>';
+$doc = new JustHTML($html);
+
+$title = $doc->query('h1')[0]->toText();
+$lead = $doc->query('p.lead')[0]->toText();
+$link = $doc->query('a')[0]->attrs['href'] ?? '';
+
+echo $title . "\n";
+echo $lead . "\n";
+echo $link . "\n";
+```
+
+Expected output:
+
+```text
+Title
+Intro
+/a
 ```
 
 ## Markdown
