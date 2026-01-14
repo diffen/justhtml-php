@@ -355,7 +355,7 @@ class TreeBuilder
     {
         if ($this->ignore_lf) {
             $this->ignore_lf = false;
-            if (Str::startsWith($text, "\n")) {
+            if ($text !== '' && $text[0] === "\n") {
                 $text = substr($text, 1);
                 if ($text === '') {
                     return;

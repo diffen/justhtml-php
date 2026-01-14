@@ -34,7 +34,10 @@ final class TreeBuilderUtils
 {
     public static function isAllWhitespace(string $text): bool
     {
-        return trim($text, "\t\n\f\r ") === '';
+        if ($text === '') {
+            return true;
+        }
+        return strspn($text, "\t\n\f\r ") === strlen($text);
     }
 
     /** @param array<int, string> $haystack */

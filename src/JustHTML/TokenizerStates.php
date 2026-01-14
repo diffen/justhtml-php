@@ -28,7 +28,7 @@ trait TokenizerStates
             return $text;
         }
         if (preg_match('/^[\x00-\x7F]*$/', $text) === 1) {
-            if (Str::contains($text, "\f")) {
+            if (strpos($text, "\f") !== false) {
                 return str_replace("\f", ' ', $text);
             }
             return $text;
@@ -44,7 +44,7 @@ trait TokenizerStates
 
     private static function coerceCommentForXml(string $text): string
     {
-        if (Str::contains($text, '--')) {
+        if (strpos($text, '--') !== false) {
             return str_replace('--', '- -', $text);
         }
         return $text;
@@ -54,37 +54,25 @@ trait TokenizerStates
     {
         $buffer = $this->buffer;
         $length = $this->length;
-        $pos = $this->pos;
-
         while (true) {
             if ($this->reconsume) {
                 $this->reconsume = false;
                 $this->pos -= 1;
-                $pos = $this->pos;
             }
 
+            $pos = $this->pos;
             if ($pos >= $length) {
-                $this->pos = $length;
+                $this->pos = $pos;
                 $this->currentChar = null;
                 $this->flushText();
                 $this->emitToken(new EOFToken());
                 return true;
             }
 
-            $nextLt = strpos($buffer, '<', $pos);
-            if ($nextLt === false) {
-                $nextLt = $length;
-            }
-
-            if ($nextLt > $pos) {
-                $chunk = substr($buffer, $pos, $nextLt - $pos);
-                if (Str::contains($chunk, "\r")) {
-                    $chunk = str_replace("\r\n", "\n", $chunk);
-                    $chunk = str_replace("\r", "\n", $chunk);
-                }
-                $this->appendText($chunk);
-                $this->ignoreLf = Str::endsWith($chunk, "\r");
-                $pos = $nextLt;
+            $runLen = strcspn($buffer, "<\r", $pos);
+            if ($runLen > 0) {
+                $this->appendText(substr($buffer, $pos, $runLen));
+                $pos += $runLen;
                 $this->pos = $pos;
                 if ($pos >= $length) {
                     continue;
@@ -92,6 +80,16 @@ trait TokenizerStates
             }
 
             $c = $buffer[$pos];
+            if ($c === "\r") {
+                $this->appendText("\n");
+                $pos += 1;
+                if ($pos < $length && $buffer[$pos] === "\n") {
+                    $pos += 1;
+                }
+                $this->pos = $pos;
+                continue;
+            }
+
             $pos += 1;
             $this->pos = $pos;
             $this->currentChar = $c;
@@ -103,16 +101,16 @@ trait TokenizerStates
                 if (($ord >= 0x61 && $ord <= 0x7A) || ($ord >= 0x41 && $ord <= 0x5A)) {
                     $this->flushText();
                     $this->currentTagKind = Tag::START;
-                    $this->currentTagName = [];
-                    $this->currentAttrName = [];
-                    $this->currentAttrValue = [];
+                    $this->currentTagName = '';
+                    $this->currentAttrName = '';
+                    $this->currentAttrValue = '';
                     $this->currentAttrValueHasAmp = false;
                     $this->currentTagSelfClosing = false;
 
                     if ($ord >= 0x41 && $ord <= 0x5A) {
                         $nc = chr($ord + 32);
                     }
-                    $this->currentTagName[] = $nc;
+                    $this->currentTagName .= $nc;
                     $this->pos += 1;
                     $this->state = self::TAG_NAME;
                     return $this->stateTagName();
@@ -122,7 +120,7 @@ trait TokenizerStates
                     if ($pos + 2 < $length && $buffer[$pos + 1] === '-' && $buffer[$pos + 2] === '-') {
                         $this->flushText();
                         $this->pos += 3;
-                        $this->currentComment = [];
+                        $this->currentComment = '';
                         $this->state = self::COMMENT_START;
                         return $this->stateCommentStart();
                     }
@@ -135,16 +133,16 @@ trait TokenizerStates
                         if (($ordNnc >= 0x61 && $ordNnc <= 0x7A) || ($ordNnc >= 0x41 && $ordNnc <= 0x5A)) {
                             $this->flushText();
                             $this->currentTagKind = Tag::END;
-                            $this->currentTagName = [];
-                            $this->currentAttrName = [];
-                            $this->currentAttrValue = [];
+                            $this->currentTagName = '';
+                            $this->currentAttrName = '';
+                            $this->currentAttrValue = '';
                             $this->currentAttrValueHasAmp = false;
                             $this->currentTagSelfClosing = false;
 
                             if ($ordNnc >= 0x41 && $ordNnc <= 0x5A) {
                                 $nnc = chr($ordNnc + 32);
                             }
-                            $this->currentTagName[] = $nnc;
+                            $this->currentTagName .= $nnc;
                             $this->pos += 2;
                             $this->state = self::TAG_NAME;
                             return $this->stateTagName();
@@ -179,7 +177,7 @@ trait TokenizerStates
         }
         if ($c === '?') {
             $this->emitError('unexpected-question-mark-instead-of-tag-name');
-            $this->currentComment = [];
+            $this->currentComment = '';
             $this->reconsumeCurrent();
             $this->state = self::BOGUS_COMMENT;
             return false;
@@ -210,7 +208,7 @@ trait TokenizerStates
         }
 
         $this->emitError('invalid-first-character-of-tag-name');
-        $this->currentComment = [];
+        $this->currentComment = '';
         $this->reconsumeCurrent();
         $this->state = self::BOGUS_COMMENT;
         return false;
@@ -219,13 +217,81 @@ trait TokenizerStates
     private function stateTagName(): bool
     {
         $replacement = "\u{FFFD}";
+        $buffer = $this->buffer;
+        $length = $this->length;
         while (true) {
-            $c = $this->getChar();
-            if ($c === null) {
+            if ($this->reconsume) {
+                $this->reconsume = false;
+                $c = $this->currentChar;
+                if ($c === null) {
+                    $this->emitError('eof-in-tag');
+                    $this->emitToken(new EOFToken());
+                    return true;
+                }
+                if ($c === "\t" || $c === "\n" || $c === "\f" || $c === ' ') {
+                    $this->state = self::BEFORE_ATTRIBUTE_NAME;
+                    return false;
+                }
+                if ($c === '/') {
+                    $this->state = self::SELF_CLOSING_START_TAG;
+                    return false;
+                }
+                if ($c === '>') {
+                    $switched = $this->emitCurrentTag();
+                    if (!$switched) {
+                        $this->state = self::DATA;
+                    }
+                    return false;
+                }
+                if ($c === "\0") {
+                    $this->emitError('unexpected-null-character');
+                    $this->currentTagName .= $replacement;
+                    continue;
+                }
+                $ord = ord($c);
+                if ($ord >= 0x41 && $ord <= 0x5A) {
+                    $c = chr($ord + 32);
+                }
+                $this->currentTagName .= $c;
+                continue;
+            }
+
+            $pos = $this->pos;
+            if ($pos >= $length) {
                 $this->emitError('eof-in-tag');
                 $this->emitToken(new EOFToken());
                 return true;
             }
+
+            if ($this->ignoreLf && $buffer[$pos] === "\n") {
+                $this->ignoreLf = false;
+                $this->pos = $pos + 1;
+                continue;
+            }
+
+            $runLen = strcspn($buffer, "\t\n\f />\0\r", $pos);
+            if ($runLen > 0) {
+                $chunk = substr($buffer, $pos, $runLen);
+                $chunk = strtr($chunk, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz');
+                $this->currentTagName .= $chunk;
+                $this->pos = $pos + $runLen;
+                $pos = $this->pos;
+                if ($pos >= $length) {
+                    $this->emitError('eof-in-tag');
+                    $this->emitToken(new EOFToken());
+                    return true;
+                }
+            }
+
+            $c = $buffer[$pos];
+            $this->pos = $pos + 1;
+            if ($c === "\r") {
+                $this->ignoreLf = true;
+                $c = "\n";
+            } else {
+                $this->ignoreLf = false;
+            }
+
             if ($c === "\t" || $c === "\n" || $c === "\f" || $c === ' ') {
                 $this->state = self::BEFORE_ATTRIBUTE_NAME;
                 return false;
@@ -243,14 +309,14 @@ trait TokenizerStates
             }
             if ($c === "\0") {
                 $this->emitError('unexpected-null-character');
-                $this->currentTagName[] = $replacement;
+                $this->currentTagName .= $replacement;
                 continue;
             }
             $ord = ord($c);
             if ($ord >= 0x41 && $ord <= 0x5A) {
                 $c = chr($ord + 32);
             }
-            $this->currentTagName[] = $c;
+            $this->currentTagName .= $c;
         }
     }
 
@@ -281,15 +347,15 @@ trait TokenizerStates
             }
             if ($c === '=') {
                 $this->emitError('unexpected-equals-sign-before-attribute-name');
-                $this->currentAttrName = ['='];
-                $this->currentAttrValue = [];
+                $this->currentAttrName = '=';
+                $this->currentAttrValue = '';
                 $this->currentAttrValueHasAmp = false;
                 $this->state = self::ATTRIBUTE_NAME;
                 return false;
             }
 
-            $this->currentAttrName = [];
-            $this->currentAttrValue = [];
+            $this->currentAttrName = '';
+            $this->currentAttrValue = '';
             $this->currentAttrValueHasAmp = false;
             if ($c === "\0") {
                 $this->emitError('unexpected-null-character');
@@ -300,7 +366,7 @@ trait TokenizerStates
                     $c = chr($ord + 32);
                 }
             }
-            $this->currentAttrName[] = $c;
+            $this->currentAttrName .= $c;
             $this->state = self::ATTRIBUTE_NAME;
             return false;
         }
@@ -309,14 +375,94 @@ trait TokenizerStates
     private function stateAttributeName(): bool
     {
         $replacement = "\u{FFFD}";
+        $buffer = $this->buffer;
+        $length = $this->length;
         while (true) {
-            $c = $this->getChar();
-            if ($c === null) {
+            if ($this->reconsume) {
+                $this->reconsume = false;
+                $c = $this->currentChar;
+                if ($c === null) {
+                    $this->emitError('eof-in-tag');
+                    $this->flushText();
+                    $this->emitToken(new EOFToken());
+                    return true;
+                }
+                if ($c === "\t" || $c === "\n" || $c === "\f" || $c === ' ') {
+                    $this->finishAttribute();
+                    $this->state = self::AFTER_ATTRIBUTE_NAME;
+                    return false;
+                }
+                if ($c === '/') {
+                    $this->finishAttribute();
+                    $this->state = self::SELF_CLOSING_START_TAG;
+                    return false;
+                }
+                if ($c === '=') {
+                    $this->state = self::BEFORE_ATTRIBUTE_VALUE;
+                    return false;
+                }
+                if ($c === '>') {
+                    $this->finishAttribute();
+                    $switched = $this->emitCurrentTag();
+                    if (!$switched) {
+                        $this->state = self::DATA;
+                    }
+                    return false;
+                }
+                if ($c === "\0") {
+                    $this->emitError('unexpected-null-character');
+                    $this->currentAttrName .= $replacement;
+                    continue;
+                }
+                if ($c === '"' || $c === "'" || $c === '<') {
+                    $this->emitError('unexpected-character-in-attribute-name');
+                }
+                $ord = ord($c);
+                if ($ord >= 0x41 && $ord <= 0x5A) {
+                    $c = chr($ord + 32);
+                }
+                $this->currentAttrName .= $c;
+                continue;
+            }
+
+            $pos = $this->pos;
+            if ($pos >= $length) {
                 $this->emitError('eof-in-tag');
                 $this->flushText();
                 $this->emitToken(new EOFToken());
                 return true;
             }
+
+            if ($this->ignoreLf && $buffer[$pos] === "\n") {
+                $this->ignoreLf = false;
+                $this->pos = $pos + 1;
+                continue;
+            }
+
+            $runLen = strcspn($buffer, "\t\n\f />=\0\"'<\r", $pos);
+            if ($runLen > 0) {
+                $chunk = substr($buffer, $pos, $runLen);
+                $chunk = strtr($chunk, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz');
+                $this->currentAttrName .= $chunk;
+                $this->pos = $pos + $runLen;
+                $pos = $this->pos;
+                if ($pos >= $length) {
+                    $this->emitError('eof-in-tag');
+                    $this->flushText();
+                    $this->emitToken(new EOFToken());
+                    return true;
+                }
+            }
+
+            $c = $buffer[$pos];
+            $this->pos = $pos + 1;
+            if ($c === "\r") {
+                $this->ignoreLf = true;
+                $c = "\n";
+            } else {
+                $this->ignoreLf = false;
+            }
+
             if ($c === "\t" || $c === "\n" || $c === "\f" || $c === ' ') {
                 $this->finishAttribute();
                 $this->state = self::AFTER_ATTRIBUTE_NAME;
@@ -341,7 +487,7 @@ trait TokenizerStates
             }
             if ($c === "\0") {
                 $this->emitError('unexpected-null-character');
-                $this->currentAttrName[] = $replacement;
+                $this->currentAttrName .= $replacement;
                 continue;
             }
             if ($c === '"' || $c === "'" || $c === '<') {
@@ -351,7 +497,7 @@ trait TokenizerStates
             if ($ord >= 0x41 && $ord <= 0x5A) {
                 $c = chr($ord + 32);
             }
-            $this->currentAttrName[] = $c;
+            $this->currentAttrName .= $c;
         }
     }
 
@@ -387,8 +533,8 @@ trait TokenizerStates
             }
 
             $this->finishAttribute();
-            $this->currentAttrName = [];
-            $this->currentAttrValue = [];
+            $this->currentAttrName = '';
+            $this->currentAttrValue = '';
             $this->currentAttrValueHasAmp = false;
             if ($c === "\0") {
                 $this->emitError('unexpected-null-character');
@@ -399,7 +545,7 @@ trait TokenizerStates
                     $c = chr($ord + 32);
                 }
             }
-            $this->currentAttrName[] = $c;
+            $this->currentAttrName .= $c;
             $this->state = self::ATTRIBUTE_NAME;
             return false;
         }
@@ -444,13 +590,68 @@ trait TokenizerStates
     private function stateAttributeValueDouble(): bool
     {
         $replacement = "\u{FFFD}";
+        $buffer = $this->buffer;
+        $length = $this->length;
         while (true) {
-            $c = $this->getChar();
-            if ($c === null) {
+            if ($this->reconsume) {
+                $this->reconsume = false;
+                $c = $this->currentChar;
+                if ($c === null) {
+                    $this->emitError('eof-in-tag');
+                    $this->emitToken(new EOFToken());
+                    return true;
+                }
+                if ($c === '"') {
+                    $this->state = self::AFTER_ATTRIBUTE_VALUE_QUOTED;
+                    return false;
+                }
+                if ($c === '&') {
+                    $this->appendAttrValueChar('&');
+                    $this->currentAttrValueHasAmp = true;
+                    continue;
+                }
+                if ($c === "\0") {
+                    $this->emitError('unexpected-null-character');
+                    $this->appendAttrValueChar($replacement);
+                    continue;
+                }
+                $this->appendAttrValueChar($c);
+                continue;
+            }
+            $pos = $this->pos;
+            if ($pos >= $length) {
                 $this->emitError('eof-in-tag');
                 $this->emitToken(new EOFToken());
                 return true;
             }
+
+            if ($this->ignoreLf && $buffer[$pos] === "\n") {
+                $this->ignoreLf = false;
+                $this->pos = $pos + 1;
+                continue;
+            }
+
+            $runLen = strcspn($buffer, "\"&\0\r\n", $pos);
+            if ($runLen > 0) {
+                $this->currentAttrValue .= substr($buffer, $pos, $runLen);
+                $this->pos = $pos + $runLen;
+                $pos = $this->pos;
+                if ($pos >= $length) {
+                    $this->emitError('eof-in-tag');
+                    $this->emitToken(new EOFToken());
+                    return true;
+                }
+            }
+
+            $c = $buffer[$pos];
+            $this->pos = $pos + 1;
+            if ($c === "\r") {
+                $this->ignoreLf = true;
+                $c = "\n";
+            } else {
+                $this->ignoreLf = false;
+            }
+
             if ($c === '"') {
                 $this->state = self::AFTER_ATTRIBUTE_VALUE_QUOTED;
                 return false;
@@ -472,13 +673,68 @@ trait TokenizerStates
     private function stateAttributeValueSingle(): bool
     {
         $replacement = "\u{FFFD}";
+        $buffer = $this->buffer;
+        $length = $this->length;
         while (true) {
-            $c = $this->getChar();
-            if ($c === null) {
+            if ($this->reconsume) {
+                $this->reconsume = false;
+                $c = $this->currentChar;
+                if ($c === null) {
+                    $this->emitError('eof-in-tag');
+                    $this->emitToken(new EOFToken());
+                    return true;
+                }
+                if ($c === "'") {
+                    $this->state = self::AFTER_ATTRIBUTE_VALUE_QUOTED;
+                    return false;
+                }
+                if ($c === '&') {
+                    $this->appendAttrValueChar('&');
+                    $this->currentAttrValueHasAmp = true;
+                    continue;
+                }
+                if ($c === "\0") {
+                    $this->emitError('unexpected-null-character');
+                    $this->appendAttrValueChar($replacement);
+                    continue;
+                }
+                $this->appendAttrValueChar($c);
+                continue;
+            }
+            $pos = $this->pos;
+            if ($pos >= $length) {
                 $this->emitError('eof-in-tag');
                 $this->emitToken(new EOFToken());
                 return true;
             }
+
+            if ($this->ignoreLf && $buffer[$pos] === "\n") {
+                $this->ignoreLf = false;
+                $this->pos = $pos + 1;
+                continue;
+            }
+
+            $runLen = strcspn($buffer, "'&\0\r\n", $pos);
+            if ($runLen > 0) {
+                $this->currentAttrValue .= substr($buffer, $pos, $runLen);
+                $this->pos = $pos + $runLen;
+                $pos = $this->pos;
+                if ($pos >= $length) {
+                    $this->emitError('eof-in-tag');
+                    $this->emitToken(new EOFToken());
+                    return true;
+                }
+            }
+
+            $c = $buffer[$pos];
+            $this->pos = $pos + 1;
+            if ($c === "\r") {
+                $this->ignoreLf = true;
+                $c = "\n";
+            } else {
+                $this->ignoreLf = false;
+            }
+
             if ($c === "'") {
                 $this->state = self::AFTER_ATTRIBUTE_VALUE_QUOTED;
                 return false;
@@ -500,13 +756,80 @@ trait TokenizerStates
     private function stateAttributeValueUnquoted(): bool
     {
         $replacement = "\u{FFFD}";
+        $buffer = $this->buffer;
+        $length = $this->length;
         while (true) {
-            $c = $this->getChar();
-            if ($c === null) {
+            if ($this->reconsume) {
+                $this->reconsume = false;
+                $c = $this->currentChar;
+                if ($c === null) {
+                    $this->emitError('eof-in-tag');
+                    $this->emitToken(new EOFToken());
+                    return true;
+                }
+                if ($c === "\t" || $c === "\n" || $c === "\f" || $c === ' ') {
+                    $this->finishAttribute();
+                    $this->state = self::BEFORE_ATTRIBUTE_NAME;
+                    return false;
+                }
+                if ($c === '>') {
+                    $this->finishAttribute();
+                    $switched = $this->emitCurrentTag();
+                    if (!$switched) {
+                        $this->state = self::DATA;
+                    }
+                    return false;
+                }
+                if ($c === '&') {
+                    $this->appendAttrValueChar('&');
+                    $this->currentAttrValueHasAmp = true;
+                    continue;
+                }
+                if ($c === '"' || $c === "'" || $c === '<' || $c === '=' || $c === '`') {
+                    $this->emitError('unexpected-character-in-unquoted-attribute-value');
+                }
+                if ($c === "\0") {
+                    $this->emitError('unexpected-null-character');
+                    $this->appendAttrValueChar($replacement);
+                    continue;
+                }
+                $this->appendAttrValueChar($c);
+                continue;
+            }
+            $pos = $this->pos;
+            if ($pos >= $length) {
                 $this->emitError('eof-in-tag');
                 $this->emitToken(new EOFToken());
                 return true;
             }
+
+            if ($this->ignoreLf && $buffer[$pos] === "\n") {
+                $this->ignoreLf = false;
+                $this->pos = $pos + 1;
+                continue;
+            }
+
+            $runLen = strcspn($buffer, "\t\n\f >\"'<=`\0&\r", $pos);
+            if ($runLen > 0) {
+                $this->currentAttrValue .= substr($buffer, $pos, $runLen);
+                $this->pos = $pos + $runLen;
+                $pos = $this->pos;
+                if ($pos >= $length) {
+                    $this->emitError('eof-in-tag');
+                    $this->emitToken(new EOFToken());
+                    return true;
+                }
+            }
+
+            $c = $buffer[$pos];
+            $this->pos = $pos + 1;
+            if ($c === "\r") {
+                $this->ignoreLf = true;
+                $c = "\n";
+            } else {
+                $this->ignoreLf = false;
+            }
+
             if ($c === "\t" || $c === "\n" || $c === "\f" || $c === ' ') {
                 $this->finishAttribute();
                 $this->state = self::BEFORE_ATTRIBUTE_NAME;
@@ -595,12 +918,12 @@ trait TokenizerStates
     private function stateMarkupDeclarationOpen(): bool
     {
         if ($this->consumeIf('--')) {
-            $this->currentComment = [];
+            $this->currentComment = '';
             $this->state = self::COMMENT_START;
             return false;
         }
         if ($this->consumeCaseInsensitive('DOCTYPE')) {
-            $this->currentDoctypeName = [];
+            $this->currentDoctypeName = '';
             $this->currentDoctypePublic = null;
             $this->currentDoctypeSystem = null;
             $this->currentDoctypeForceQuirks = false;
@@ -616,12 +939,12 @@ trait TokenizerStates
                 return false;
             }
             $this->emitError('cdata-in-html-content');
-            $this->currentComment = ['[CDATA['];
+            $this->currentComment = '[CDATA[';
             $this->state = self::BOGUS_COMMENT;
             return false;
         }
         $this->emitError('incorrectly-opened-comment');
-        $this->currentComment = [];
+        $this->currentComment = '';
         $this->state = self::BOGUS_COMMENT;
         return false;
     }
@@ -669,7 +992,7 @@ trait TokenizerStates
             $this->emitToken(new EOFToken());
             return true;
         }
-        $this->currentComment[] = '-';
+        $this->currentComment .= '-';
         $this->reconsumeCurrent();
         $this->state = self::COMMENT;
         return false;
@@ -694,10 +1017,10 @@ trait TokenizerStates
             }
             if ($c === "\0") {
                 $this->emitError('unexpected-null-character');
-                $this->currentComment[] = "\u{FFFD}";
+                $this->currentComment .= "\u{FFFD}";
                 continue;
             }
-            $this->currentComment[] = $c;
+            $this->currentComment .= $c;
         }
     }
 
@@ -714,7 +1037,7 @@ trait TokenizerStates
             $this->emitToken(new EOFToken());
             return true;
         }
-        $this->currentComment[] = '-';
+        $this->currentComment .= '-';
         $this->reconsumeCurrent();
         $this->state = self::COMMENT;
         return false;
@@ -733,7 +1056,7 @@ trait TokenizerStates
             return false;
         }
         if ($c === '-') {
-            $this->currentComment[] = '-';
+            $this->currentComment .= '-';
             return false;
         }
         if ($c === null) {
@@ -742,7 +1065,7 @@ trait TokenizerStates
             $this->emitToken(new EOFToken());
             return true;
         }
-        $this->currentComment[] = '--';
+        $this->currentComment .= '--';
         $this->reconsumeCurrent();
         $this->state = self::COMMENT;
         return false;
@@ -752,7 +1075,7 @@ trait TokenizerStates
     {
         $c = $this->getChar();
         if ($c === '-') {
-            $this->currentComment[] = '--!';
+            $this->currentComment .= '--!';
             $this->state = self::COMMENT_END_DASH;
             return false;
         }
@@ -768,7 +1091,7 @@ trait TokenizerStates
             $this->emitToken(new EOFToken());
             return true;
         }
-        $this->currentComment[] = '--!';
+        $this->currentComment .= '--!';
         $this->reconsumeCurrent();
         $this->state = self::COMMENT;
         return false;
@@ -790,10 +1113,10 @@ trait TokenizerStates
             }
             if ($c === "\0") {
                 $this->emitError('unexpected-null-character');
-                $this->currentComment[] = "\u{FFFD}";
+                $this->currentComment .= "\u{FFFD}";
                 continue;
             }
-            $this->currentComment[] = $c;
+            $this->currentComment .= $c;
         }
     }
 
@@ -847,7 +1170,7 @@ trait TokenizerStates
             }
             if ($c === "\0") {
                 $this->emitError('unexpected-null-character');
-                $this->currentDoctypeName[] = "\u{FFFD}";
+                $this->currentDoctypeName .= "\u{FFFD}";
                 $this->state = self::DOCTYPE_NAME;
                 return false;
             }
@@ -855,7 +1178,7 @@ trait TokenizerStates
             if ($ord >= 0x41 && $ord <= 0x5A) {
                 $c = chr($ord + 32);
             }
-            $this->currentDoctypeName[] = $c;
+            $this->currentDoctypeName .= $c;
             $this->state = self::DOCTYPE_NAME;
             return false;
         }
@@ -883,14 +1206,14 @@ trait TokenizerStates
             }
             if ($c === "\0") {
                 $this->emitError('unexpected-null-character');
-                $this->currentDoctypeName[] = "\u{FFFD}";
+                $this->currentDoctypeName .= "\u{FFFD}";
                 continue;
             }
             $ord = ord($c);
             if ($ord >= 0x41 && $ord <= 0x5A) {
                 $c = chr($ord + 32);
             }
-            $this->currentDoctypeName[] = $c;
+            $this->currentDoctypeName .= $c;
         }
     }
 
@@ -946,13 +1269,13 @@ trait TokenizerStates
             }
             if ($c === '"') {
                 $this->emitError('missing-whitespace-before-doctype-public-identifier');
-                $this->currentDoctypePublic = [];
+                $this->currentDoctypePublic = '';
                 $this->state = self::DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED;
                 return false;
             }
             if ($c === "'") {
                 $this->emitError('missing-whitespace-before-doctype-public-identifier');
-                $this->currentDoctypePublic = [];
+                $this->currentDoctypePublic = '';
                 $this->state = self::DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED;
                 return false;
             }
@@ -988,13 +1311,13 @@ trait TokenizerStates
             }
             if ($c === '"') {
                 $this->emitError('missing-whitespace-after-doctype-public-identifier');
-                $this->currentDoctypeSystem = [];
+                $this->currentDoctypeSystem = '';
                 $this->state = self::DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED;
                 return false;
             }
             if ($c === "'") {
                 $this->emitError('missing-whitespace-after-doctype-public-identifier');
-                $this->currentDoctypeSystem = [];
+                $this->currentDoctypeSystem = '';
                 $this->state = self::DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED;
                 return false;
             }
@@ -1028,12 +1351,12 @@ trait TokenizerStates
                 continue;
             }
             if ($c === '"') {
-                $this->currentDoctypePublic = [];
+                $this->currentDoctypePublic = '';
                 $this->state = self::DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED;
                 return false;
             }
             if ($c === "'") {
-                $this->currentDoctypePublic = [];
+                $this->currentDoctypePublic = '';
                 $this->state = self::DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED;
                 return false;
             }
@@ -1069,7 +1392,7 @@ trait TokenizerStates
             }
             if ($c === "\0") {
                 $this->emitError('unexpected-null-character');
-                $this->currentDoctypePublic[] = "\u{FFFD}";
+                $this->currentDoctypePublic .= "\u{FFFD}";
                 continue;
             }
             if ($c === '>') {
@@ -1079,7 +1402,7 @@ trait TokenizerStates
                 $this->state = self::DATA;
                 return false;
             }
-            $this->currentDoctypePublic[] = $c;
+            $this->currentDoctypePublic .= $c;
         }
     }
 
@@ -1100,7 +1423,7 @@ trait TokenizerStates
             }
             if ($c === "\0") {
                 $this->emitError('unexpected-null-character');
-                $this->currentDoctypePublic[] = "\u{FFFD}";
+                $this->currentDoctypePublic .= "\u{FFFD}";
                 continue;
             }
             if ($c === '>') {
@@ -1110,7 +1433,7 @@ trait TokenizerStates
                 $this->state = self::DATA;
                 return false;
             }
-            $this->currentDoctypePublic[] = $c;
+            $this->currentDoctypePublic .= $c;
         }
     }
 
@@ -1136,13 +1459,13 @@ trait TokenizerStates
             }
             if ($c === '"') {
                 $this->emitError('missing-whitespace-between-doctype-public-and-system-identifiers');
-                $this->currentDoctypeSystem = [];
+                $this->currentDoctypeSystem = '';
                 $this->state = self::DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED;
                 return false;
             }
             if ($c === "'") {
                 $this->emitError('missing-whitespace-between-doctype-public-and-system-identifiers');
-                $this->currentDoctypeSystem = [];
+                $this->currentDoctypeSystem = '';
                 $this->state = self::DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED;
                 return false;
             }
@@ -1174,12 +1497,12 @@ trait TokenizerStates
                 return false;
             }
             if ($c === '"') {
-                $this->currentDoctypeSystem = [];
+                $this->currentDoctypeSystem = '';
                 $this->state = self::DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED;
                 return false;
             }
             if ($c === "'") {
-                $this->currentDoctypeSystem = [];
+                $this->currentDoctypeSystem = '';
                 $this->state = self::DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED;
                 return false;
             }
@@ -1206,12 +1529,12 @@ trait TokenizerStates
                 continue;
             }
             if ($c === '"') {
-                $this->currentDoctypeSystem = [];
+                $this->currentDoctypeSystem = '';
                 $this->state = self::DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED;
                 return false;
             }
             if ($c === "'") {
-                $this->currentDoctypeSystem = [];
+                $this->currentDoctypeSystem = '';
                 $this->state = self::DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED;
                 return false;
             }
@@ -1247,7 +1570,7 @@ trait TokenizerStates
             }
             if ($c === "\0") {
                 $this->emitError('unexpected-null-character');
-                $this->currentDoctypeSystem[] = "\u{FFFD}";
+                $this->currentDoctypeSystem .= "\u{FFFD}";
                 continue;
             }
             if ($c === '>') {
@@ -1257,7 +1580,7 @@ trait TokenizerStates
                 $this->state = self::DATA;
                 return false;
             }
-            $this->currentDoctypeSystem[] = $c;
+            $this->currentDoctypeSystem .= $c;
         }
     }
 
@@ -1278,7 +1601,7 @@ trait TokenizerStates
             }
             if ($c === "\0") {
                 $this->emitError('unexpected-null-character');
-                $this->currentDoctypeSystem[] = "\u{FFFD}";
+                $this->currentDoctypeSystem .= "\u{FFFD}";
                 continue;
             }
             if ($c === '>') {
@@ -1288,7 +1611,7 @@ trait TokenizerStates
                 $this->state = self::DATA;
                 return false;
             }
-            $this->currentDoctypeSystem[] = $c;
+            $this->currentDoctypeSystem .= $c;
         }
     }
 
@@ -1431,7 +1754,8 @@ trait TokenizerStates
 
             if ($nextSpecial > $pos) {
                 $chunk = substr($buffer, $pos, $nextSpecial - $pos);
-                $this->appendTextChunk($chunk, Str::endsWith($chunk, "\r"));
+                $chunkLen = strlen($chunk);
+                $this->appendTextChunk($chunk, $chunkLen > 0 && $chunk[$chunkLen - 1] === "\r");
                 $pos = $nextSpecial;
                 $this->pos = $pos;
             }
@@ -1468,8 +1792,8 @@ trait TokenizerStates
     {
         $c = $this->getChar();
         if ($c === '/') {
-            $this->currentTagName = [];
-            $this->originalTagName = [];
+            $this->currentTagName = '';
+            $this->originalTagName = '';
             $this->state = self::RCDATA_END_TAG_OPEN;
             return false;
         }
@@ -1485,8 +1809,8 @@ trait TokenizerStates
         if ($c !== null) {
             $ord = ord($c);
             if (($ord >= 0x41 && $ord <= 0x5A) || ($ord >= 0x61 && $ord <= 0x7A)) {
-                $this->currentTagName[] = strtolower($c);
-                $this->originalTagName[] = $c;
+                $this->currentTagName .= strtolower($c);
+                $this->originalTagName .= $c;
                 $this->state = self::RCDATA_END_TAG_NAME;
                 return false;
             }
@@ -1505,12 +1829,12 @@ trait TokenizerStates
             if ($c !== null) {
                 $ord = ord($c);
                 if (($ord >= 0x41 && $ord <= 0x5A) || ($ord >= 0x61 && $ord <= 0x7A)) {
-                    $this->currentTagName[] = strtolower($c);
-                    $this->originalTagName[] = $c;
+                    $this->currentTagName .= strtolower($c);
+                    $this->originalTagName .= $c;
                     continue;
                 }
             }
-            $tagName = implode('', $this->currentTagName);
+            $tagName = $this->currentTagName;
             if ($tagName === $this->rawtextTagName) {
                 if ($c === '>') {
                     $tag = new Tag(Tag::END, $tagName, [], false);
@@ -1518,7 +1842,7 @@ trait TokenizerStates
                     $this->emitToken($tag);
                     $this->state = self::DATA;
                     $this->rawtextTagName = null;
-                    $this->originalTagName = [];
+                    $this->originalTagName = '';
                     return false;
                 }
                 if ($c === ' ' || $c === "\t" || $c === "\n" || $c === "\r" || $c === "\f") {
@@ -1538,22 +1862,22 @@ trait TokenizerStates
             if ($c === null) {
                 $this->appendText('<');
                 $this->appendText('/');
-                foreach ($this->originalTagName as $ch) {
-                    $this->appendText($ch);
+                if ($this->originalTagName !== '') {
+                    $this->appendText($this->originalTagName);
                 }
-                $this->currentTagName = [];
-                $this->originalTagName = [];
+                $this->currentTagName = '';
+                $this->originalTagName = '';
                 $this->flushText();
                 $this->emitToken(new EOFToken());
                 return true;
             }
             $this->appendText('<');
             $this->appendText('/');
-            foreach ($this->originalTagName as $ch) {
-                $this->appendText($ch);
+            if ($this->originalTagName !== '') {
+                $this->appendText($this->originalTagName);
             }
-            $this->currentTagName = [];
-            $this->originalTagName = [];
+            $this->currentTagName = '';
+            $this->originalTagName = '';
             $this->reconsumeCurrent();
             $this->state = self::RCDATA;
             return false;
@@ -1583,7 +1907,8 @@ trait TokenizerStates
             if ($nullIndex !== false && $nullIndex < $nextSpecial) {
                 if ($nullIndex > $pos) {
                     $chunk = substr($buffer, $pos, $nullIndex - $pos);
-                    $this->appendTextChunk($chunk, Str::endsWith($chunk, "\r"));
+                    $chunkLen = strlen($chunk);
+                    $this->appendTextChunk($chunk, $chunkLen > 0 && $chunk[$chunkLen - 1] === "\r");
                 } else {
                     $this->ignoreLf = false;
                 }
@@ -1596,7 +1921,8 @@ trait TokenizerStates
             if ($ltIndex === false) {
                 if ($pos < $length) {
                     $chunk = substr($buffer, $pos);
-                    $this->appendTextChunk($chunk, Str::endsWith($chunk, "\r"));
+                    $chunkLen = strlen($chunk);
+                    $this->appendTextChunk($chunk, $chunkLen > 0 && $chunk[$chunkLen - 1] === "\r");
                 }
                 $this->pos = $length;
                 $this->flushText();
@@ -1605,7 +1931,8 @@ trait TokenizerStates
             }
             if ($ltIndex > $pos) {
                 $chunk = substr($buffer, $pos, $ltIndex - $pos);
-                $this->appendTextChunk($chunk, Str::endsWith($chunk, "\r"));
+                $chunkLen = strlen($chunk);
+                $this->appendTextChunk($chunk, $chunkLen > 0 && $chunk[$chunkLen - 1] === "\r");
             }
             $pos = $ltIndex + 1;
             $this->pos = $pos;
@@ -1636,8 +1963,8 @@ trait TokenizerStates
     {
         $c = $this->getChar();
         if ($c === '/') {
-            $this->currentTagName = [];
-            $this->originalTagName = [];
+            $this->currentTagName = '';
+            $this->originalTagName = '';
             $this->state = self::RAWTEXT_END_TAG_OPEN;
             return false;
         }
@@ -1653,8 +1980,8 @@ trait TokenizerStates
         if ($c !== null) {
             $ord = ord($c);
             if (($ord >= 0x41 && $ord <= 0x5A) || ($ord >= 0x61 && $ord <= 0x7A)) {
-                $this->currentTagName[] = strtolower($c);
-                $this->originalTagName[] = $c;
+                $this->currentTagName .= strtolower($c);
+                $this->originalTagName .= $c;
                 $this->state = self::RAWTEXT_END_TAG_NAME;
                 return false;
             }
@@ -1673,12 +2000,12 @@ trait TokenizerStates
             if ($c !== null) {
                 $ord = ord($c);
                 if (($ord >= 0x41 && $ord <= 0x5A) || ($ord >= 0x61 && $ord <= 0x7A)) {
-                    $this->currentTagName[] = strtolower($c);
-                    $this->originalTagName[] = $c;
+                    $this->currentTagName .= strtolower($c);
+                    $this->originalTagName .= $c;
                     continue;
                 }
             }
-            $tagName = implode('', $this->currentTagName);
+            $tagName = $this->currentTagName;
             if ($tagName === $this->rawtextTagName) {
                 if ($c === '>') {
                     $tag = new Tag(Tag::END, $tagName, [], false);
@@ -1686,7 +2013,7 @@ trait TokenizerStates
                     $this->emitToken($tag);
                     $this->state = self::DATA;
                     $this->rawtextTagName = null;
-                    $this->originalTagName = [];
+                    $this->originalTagName = '';
                     return false;
                 }
                 if ($c === ' ' || $c === "\t" || $c === "\n" || $c === "\r" || $c === "\f") {
@@ -1706,22 +2033,22 @@ trait TokenizerStates
             if ($c === null) {
                 $this->appendText('<');
                 $this->appendText('/');
-                foreach ($this->originalTagName as $ch) {
-                    $this->appendText($ch);
+                if ($this->originalTagName !== '') {
+                    $this->appendText($this->originalTagName);
                 }
-                $this->currentTagName = [];
-                $this->originalTagName = [];
+                $this->currentTagName = '';
+                $this->originalTagName = '';
                 $this->flushText();
                 $this->emitToken(new EOFToken());
                 return true;
             }
             $this->appendText('<');
             $this->appendText('/');
-            foreach ($this->originalTagName as $ch) {
-                $this->appendText($ch);
+            if ($this->originalTagName !== '') {
+                $this->appendText($this->originalTagName);
             }
-            $this->currentTagName = [];
-            $this->originalTagName = [];
+            $this->currentTagName = '';
+            $this->originalTagName = '';
             $this->reconsumeCurrent();
             $this->state = self::RAWTEXT;
             return false;
@@ -1732,7 +2059,7 @@ trait TokenizerStates
     {
         if ($this->pos < $this->length) {
             $remaining = substr($this->buffer, $this->pos);
-            if (Str::contains($remaining, "\0")) {
+            if (strpos($remaining, "\0") !== false) {
                 $remaining = str_replace("\0", "\u{FFFD}", $remaining);
                 $this->emitError('unexpected-null-character');
             }
@@ -1835,14 +2162,14 @@ trait TokenizerStates
     {
         $c = $this->getChar();
         if ($c === '/') {
-            $this->tempBuffer = [];
+            $this->tempBuffer = '';
             $this->state = self::SCRIPT_DATA_ESCAPED_END_TAG_OPEN;
             return false;
         }
         if ($c !== null) {
             $ord = ord($c);
             if (($ord >= 0x41 && $ord <= 0x5A) || ($ord >= 0x61 && $ord <= 0x7A)) {
-                $this->tempBuffer = [];
+                $this->tempBuffer = '';
                 $this->appendText('<');
                 $this->reconsumeCurrent();
                 $this->state = self::SCRIPT_DATA_DOUBLE_ESCAPE_START;
@@ -1861,8 +2188,8 @@ trait TokenizerStates
         if ($c !== null) {
             $ord = ord($c);
             if (($ord >= 0x41 && $ord <= 0x5A) || ($ord >= 0x61 && $ord <= 0x7A)) {
-                $this->currentTagName = [];
-                $this->originalTagName = [];
+                $this->currentTagName = '';
+                $this->originalTagName = '';
                 $this->reconsumeCurrent();
                 $this->state = self::SCRIPT_DATA_ESCAPED_END_TAG_NAME;
                 return false;
@@ -1881,13 +2208,13 @@ trait TokenizerStates
         if ($c !== null) {
             $ord = ord($c);
             if (($ord >= 0x41 && $ord <= 0x5A) || ($ord >= 0x61 && $ord <= 0x7A)) {
-                $this->currentTagName[] = strtolower($c);
-                $this->originalTagName[] = $c;
-                $this->tempBuffer[] = $c;
+                $this->currentTagName .= strtolower($c);
+                $this->originalTagName .= $c;
+                $this->tempBuffer .= $c;
                 return false;
             }
         }
-        $tagName = implode('', $this->currentTagName);
+        $tagName = $this->currentTagName;
         $isAppropriate = $tagName === $this->rawtextTagName;
 
         if ($isAppropriate) {
@@ -1910,16 +2237,16 @@ trait TokenizerStates
                 $this->emitToken($tag);
                 $this->state = self::DATA;
                 $this->rawtextTagName = null;
-                $this->currentTagName = [];
-                $this->originalTagName = [];
+                $this->currentTagName = '';
+                $this->originalTagName = '';
                 return false;
             }
         }
 
         $this->appendText('<');
         $this->appendText('/');
-        foreach ($this->tempBuffer as $ch) {
-            $this->appendText($ch);
+        if ($this->tempBuffer !== '') {
+            $this->appendText($this->tempBuffer);
         }
         $this->reconsumeCurrent();
         $this->state = self::SCRIPT_DATA_ESCAPED;
@@ -1930,7 +2257,7 @@ trait TokenizerStates
     {
         $c = $this->getChar();
         if ($c === ' ' || $c === "\t" || $c === "\n" || $c === "\r" || $c === "\f" || $c === '/' || $c === '>') {
-            $temp = strtolower(implode('', $this->tempBuffer));
+            $temp = strtolower($this->tempBuffer);
             if ($temp === 'script') {
                 $this->state = self::SCRIPT_DATA_DOUBLE_ESCAPED;
             } else {
@@ -1942,7 +2269,7 @@ trait TokenizerStates
         if ($c !== null) {
             $ord = ord($c);
             if (($ord >= 0x41 && $ord <= 0x5A) || ($ord >= 0x61 && $ord <= 0x7A)) {
-                $this->tempBuffer[] = $c;
+                $this->tempBuffer .= $c;
                 $this->appendText($c);
                 return false;
             }
@@ -2045,7 +2372,7 @@ trait TokenizerStates
     {
         $c = $this->getChar();
         if ($c === '/') {
-            $this->tempBuffer = [];
+            $this->tempBuffer = '';
             $this->appendText('/');
             $this->state = self::SCRIPT_DATA_DOUBLE_ESCAPE_END;
             return false;
@@ -2053,7 +2380,7 @@ trait TokenizerStates
         if ($c !== null) {
             $ord = ord($c);
             if (($ord >= 0x41 && $ord <= 0x5A) || ($ord >= 0x61 && $ord <= 0x7A)) {
-                $this->tempBuffer = [];
+                $this->tempBuffer = '';
                 $this->reconsumeCurrent();
                 $this->state = self::SCRIPT_DATA_DOUBLE_ESCAPE_START;
                 return false;
@@ -2068,7 +2395,7 @@ trait TokenizerStates
     {
         $c = $this->getChar();
         if ($c === ' ' || $c === "\t" || $c === "\n" || $c === "\r" || $c === "\f" || $c === '/' || $c === '>') {
-            $temp = strtolower(implode('', $this->tempBuffer));
+            $temp = strtolower($this->tempBuffer);
             if ($temp === 'script') {
                 $this->state = self::SCRIPT_DATA_ESCAPED;
             } else {
@@ -2080,7 +2407,7 @@ trait TokenizerStates
         if ($c !== null) {
             $ord = ord($c);
             if (($ord >= 0x41 && $ord <= 0x5A) || ($ord >= 0x61 && $ord <= 0x7A)) {
-                $this->tempBuffer[] = $c;
+                $this->tempBuffer .= $c;
                 $this->appendText($c);
                 return false;
             }
@@ -2140,24 +2467,24 @@ trait TokenizerStates
 
     private function appendText(string $text): void
     {
-        if (!$this->textBuffer) {
+        if ($this->textBuffer === '') {
             $this->textStartPos = $this->pos;
         }
-        $this->textBuffer[] = $text;
+        $this->textBuffer .= $text;
     }
 
     private function flushText(): void
     {
-        if (!$this->textBuffer) {
+        if ($this->textBuffer === '') {
             return;
         }
 
-        $data = count($this->textBuffer) === 1 ? $this->textBuffer[0] : implode('', $this->textBuffer);
+        $data = $this->textBuffer;
         $rawLen = strlen($data);
 
-        $this->textBuffer = [];
+        $this->textBuffer = '';
 
-        if ($this->state === self::DATA && Str::contains($data, "\0")) {
+        if ($this->state === self::DATA && strpos($data, "\0") !== false) {
             $count = substr_count($data, "\0");
             for ($i = 0; $i < $count; $i++) {
                 $this->emitError('unexpected-null-character');
@@ -2169,7 +2496,7 @@ trait TokenizerStates
         } elseif ($this->state >= self::RAWTEXT) {
             // No entity decoding.
         } else {
-            if (Str::contains($data, '&')) {
+            if (strpos($data, '&') !== false) {
                 $data = Entities::decodeEntitiesInText($data);
             }
         }
@@ -2184,40 +2511,38 @@ trait TokenizerStates
 
     private function appendAttrValueChar(string $c): void
     {
-        $this->currentAttrValue[] = $c;
+        $this->currentAttrValue .= $c;
     }
 
     private function finishAttribute(): void
     {
-        if (!$this->currentAttrName) {
+        if ($this->currentAttrName === '') {
             return;
         }
-        $name = count($this->currentAttrName) === 1 ? $this->currentAttrName[0] : implode('', $this->currentAttrName);
+        $name = $this->currentAttrName;
         $attrs = $this->currentTagAttrs;
         $isDuplicate = array_key_exists($name, $attrs);
-        $this->currentAttrName = [];
+        $this->currentAttrName = '';
         if ($isDuplicate) {
             $this->emitError('duplicate-attribute');
-            $this->currentAttrValue = [];
+            $this->currentAttrValue = '';
             $this->currentAttrValueHasAmp = false;
             return;
         }
         $value = '';
-        if ($this->currentAttrValue) {
-            $value = count($this->currentAttrValue) === 1 ? $this->currentAttrValue[0] : implode('', $this->currentAttrValue);
-        }
+        $value = $this->currentAttrValue;
         if ($this->currentAttrValueHasAmp) {
             $value = Entities::decodeEntitiesInText($value, true);
         }
         $attrs[$name] = $value;
         $this->currentTagAttrs = $attrs;
-        $this->currentAttrValue = [];
+        $this->currentAttrValue = '';
         $this->currentAttrValueHasAmp = false;
     }
 
     private function emitCurrentTag(): bool
     {
-        $name = count($this->currentTagName) === 1 ? $this->currentTagName[0] : implode('', $this->currentTagName);
+        $name = $this->currentTagName;
         $attrs = $this->currentTagAttrs;
         $this->currentTagAttrs = [];
 
@@ -2259,9 +2584,9 @@ trait TokenizerStates
             $switchedToRawtext = true;
         }
 
-        $this->currentTagName = [];
-        $this->currentAttrName = [];
-        $this->currentAttrValue = [];
+        $this->currentTagName = '';
+        $this->currentAttrName = '';
+        $this->currentAttrValue = '';
         $this->currentTagSelfClosing = false;
         $this->currentTagKind = Tag::START;
         return $switchedToRawtext;
@@ -2269,8 +2594,8 @@ trait TokenizerStates
 
     private function emitComment(): void
     {
-        $data = $this->currentComment ? implode('', $this->currentComment) : '';
-        $this->currentComment = [];
+        $data = $this->currentComment;
+        $this->currentComment = '';
         if ($this->opts->xmlCoercion) {
             $data = self::coerceCommentForXml($data);
         }
@@ -2280,11 +2605,11 @@ trait TokenizerStates
 
     private function emitDoctype(): void
     {
-        $name = $this->currentDoctypeName ? implode('', $this->currentDoctypeName) : null;
-        $publicId = $this->currentDoctypePublic !== null ? implode('', $this->currentDoctypePublic) : null;
-        $systemId = $this->currentDoctypeSystem !== null ? implode('', $this->currentDoctypeSystem) : null;
+        $name = $this->currentDoctypeName !== '' ? $this->currentDoctypeName : null;
+        $publicId = $this->currentDoctypePublic !== null ? $this->currentDoctypePublic : null;
+        $systemId = $this->currentDoctypeSystem !== null ? $this->currentDoctypeSystem : null;
         $doctype = new Doctype($name, $publicId, $systemId, $this->currentDoctypeForceQuirks);
-        $this->currentDoctypeName = [];
+        $this->currentDoctypeName = '';
         $this->currentDoctypePublic = null;
         $this->currentDoctypeSystem = null;
         $this->currentDoctypeForceQuirks = false;
@@ -2348,12 +2673,12 @@ trait TokenizerStates
 
     private function consumeIf(string $literal): bool
     {
-        $end = $this->pos + strlen($literal);
+        $len = strlen($literal);
+        $end = $this->pos + $len;
         if ($end > $this->length) {
             return false;
         }
-        $segment = substr($this->buffer, $this->pos, strlen($literal));
-        if ($segment !== $literal) {
+        if (substr_compare($this->buffer, $literal, $this->pos, $len, false) !== 0) {
             return false;
         }
         $this->pos = $end;
@@ -2362,12 +2687,12 @@ trait TokenizerStates
 
     private function consumeCaseInsensitive(string $literal): bool
     {
-        $end = $this->pos + strlen($literal);
+        $len = strlen($literal);
+        $end = $this->pos + $len;
         if ($end > $this->length) {
             return false;
         }
-        $segment = substr($this->buffer, $this->pos, strlen($literal));
-        if (strtolower($segment) !== strtolower($literal)) {
+        if (substr_compare($this->buffer, $literal, $this->pos, $len, true) !== 0) {
             return false;
         }
         $this->pos = $end;
@@ -2391,16 +2716,20 @@ trait TokenizerStates
             $this->pos = $pos;
             return true;
         }
-        $runLen = strcspn($this->buffer, "-\0", $pos);
+        $runLen = strcspn($this->buffer, "-\0\r", $pos);
         if ($runLen > 0) {
             $chunk = substr($this->buffer, $pos, $runLen);
-            if (Str::contains($chunk, "\r")) {
-                $chunk = str_replace("\r\n", "\n", $chunk);
-                $chunk = str_replace("\r", "\n", $chunk);
-                $this->ignoreLf = Str::endsWith($chunk, "\r");
-            }
-            $this->currentComment[] = $chunk;
+            $this->currentComment .= $chunk;
             $this->pos = $pos + $runLen;
+            return true;
+        }
+        if ($this->buffer[$pos] === "\r") {
+            $this->currentComment .= "\n";
+            $pos += 1;
+            if ($pos < $length && $this->buffer[$pos] === "\n") {
+                $pos += 1;
+            }
+            $this->pos = $pos;
             return true;
         }
         return false;

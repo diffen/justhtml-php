@@ -81,12 +81,12 @@ to regenerate.
 
 | Parser | Compliance | Avg ms/doc | Selectors | Notes |
 |--------|------------|-----------:|-----------|-------|
-| **JustHTML** | 1743/1743 (100%) | 11.75 | CSS | Full spec compliance |
-| DOMDocument (libxml) | 54/1743 (3.1%) | 1.17 | XPath | Baseline, not HTML5-correct |
-| DOM\HTMLDocument | 831/1743 (47.7%) | 0.70 | CSS | HTML5 DOM (new DOM extension) |
-| masterminds/html5 | 75/1743 (4.3%) | 5.53 | XPath | HTML5 parser, low compliance |
-| voku/simple_html_dom | 29/1743 (1.7%) | 3.49 | CSS | Tolerant DOM wrapper |
-| symfony/dom-crawler | 54/1743 (3.1%) | 5.36 | CSS/XPath | Wrapper over DOMDocument (libxml) |
+| **JustHTML** | 1743/1743 (100%) | 6.72 | CSS | Full spec compliance |
+| DOMDocument (libxml) | 54/1743 (3.1%) | 1.16 | XPath | Baseline, not HTML5-correct |
+| DOM\HTMLDocument | 831/1743 (47.7%) | 0.71 | CSS | HTML5 DOM (new DOM extension) |
+| masterminds/html5 | 75/1743 (4.3%) | 5.54 | XPath | HTML5 parser, low compliance |
+| voku/simple_html_dom | 29/1743 (1.7%) | 3.46 | CSS | Tolerant DOM wrapper |
+| symfony/dom-crawler | 54/1743 (3.1%) | 5.30 | CSS/XPath | Wrapper over DOMDocument (libxml) |
 
 See `benchmarks/README.md` for parser install instructions and details.
 

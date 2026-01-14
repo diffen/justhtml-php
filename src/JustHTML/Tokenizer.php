@@ -126,35 +126,25 @@ final class Tokenizer
     public int $lastTokenLine = 1;
     public int $lastTokenColumn = 0;
 
-    /** @var array<int, string> */
-    private array $textBuffer = [];
+    private string $textBuffer = '';
     private int $textStartPos = 0;
-    /** @var array<int, string> */
-    private array $currentTagName = [];
+    private string $currentTagName = '';
     /** @var array<string, string|null> */
     private array $currentTagAttrs = [];
-    /** @var array<int, string> */
-    private array $currentAttrName = [];
-    /** @var array<int, string> */
-    private array $currentAttrValue = [];
+    private string $currentAttrName = '';
+    private string $currentAttrValue = '';
     private bool $currentAttrValueHasAmp = false;
     private bool $currentTagSelfClosing = false;
     private int $currentTagKind = Tag::START;
-    /** @var array<int, string> */
-    private array $currentComment = [];
-    /** @var array<int, string> */
-    private array $currentDoctypeName = [];
-    /** @var array<int, string>|null */
-    private ?array $currentDoctypePublic = null;
-    /** @var array<int, string>|null */
-    private ?array $currentDoctypeSystem = null;
+    private string $currentComment = '';
+    private string $currentDoctypeName = '';
+    private ?string $currentDoctypePublic = null;
+    private ?string $currentDoctypeSystem = null;
     private bool $currentDoctypeForceQuirks = false;
     private ?string $lastStartTagName = null;
     private ?string $rawtextTagName = null;
-    /** @var array<int, string> */
-    private array $originalTagName = [];
-    /** @var array<int, string> */
-    private array $tempBuffer = [];
+    private string $originalTagName = '';
+    private string $tempBuffer = '';
     private Tag $tagToken;
     private CommentToken $commentToken;
 
@@ -253,22 +243,22 @@ final class Tokenizer
         $this->lastTokenLine = 1;
         $this->lastTokenColumn = 0;
         $this->errors = [];
-        $this->textBuffer = [];
+        $this->textBuffer = '';
         $this->textStartPos = 0;
-        $this->currentTagName = [];
+        $this->currentTagName = '';
         $this->currentTagAttrs = [];
-        $this->currentAttrName = [];
-        $this->currentAttrValue = [];
+        $this->currentAttrName = '';
+        $this->currentAttrValue = '';
         $this->currentAttrValueHasAmp = false;
-        $this->currentComment = [];
-        $this->currentDoctypeName = [];
+        $this->currentComment = '';
+        $this->currentDoctypeName = '';
         $this->currentDoctypePublic = null;
         $this->currentDoctypeSystem = null;
         $this->currentDoctypeForceQuirks = false;
         $this->currentTagSelfClosing = false;
         $this->currentTagKind = Tag::START;
         $this->rawtextTagName = $this->opts->initialRawtextTag;
-        $this->tempBuffer = [];
+        $this->tempBuffer = '';
         $this->lastStartTagName = null;
         $this->tagToken->kind = Tag::START;
         $this->tagToken->name = '';

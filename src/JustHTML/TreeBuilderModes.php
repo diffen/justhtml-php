@@ -107,7 +107,7 @@ trait TreeBuilderModes
     {
         if ($token instanceof CharacterTokens) {
             $data = $token->data ?? '';
-            if (Str::contains($data, "\x00")) {
+            if (strpos($data, "\x00") !== false) {
                 $this->_parse_error('invalid-codepoint-before-head');
                 $data = str_replace("\x00", '', $data);
                 if ($data === '') {
@@ -166,13 +166,10 @@ trait TreeBuilderModes
                 return null;
             }
             $data = $token->data ?? '';
-            $i = 0;
             $len = strlen($data);
-            while ($i < $len && Str::contains("\t\n\f\r ", $data[$i])) {
-                $i++;
-            }
-            $leading = substr($data, 0, $i);
-            $remaining = substr($data, $i);
+            $leadingLen = strspn($data, "\t\n\f\r ");
+            $leading = $leadingLen > 0 ? substr($data, 0, $leadingLen) : '';
+            $remaining = $leadingLen < $len ? substr($data, $leadingLen) : '';
             if ($leading !== '') {
                 $current = $this->open_elements ? $this->open_elements[count($this->open_elements) - 1] : null;
                 if ($current !== null && $current->hasChildNodes()) {
@@ -315,11 +312,11 @@ trait TreeBuilderModes
     {
         if ($token instanceof CharacterTokens) {
             $data = $token->data ?? '';
-            if (Str::contains($data, "\x00")) {
+            if (strpos($data, "\x00") !== false) {
                 $this->_parse_error('invalid-codepoint-in-body');
                 $data = str_replace("\x00", '', $data);
             }
-            if (Str::contains($data, "\x0c")) {
+            if (strpos($data, "\x0c") !== false) {
                 $this->_parse_error('invalid-codepoint-in-body');
                 $data = str_replace("\x0c", '', $data);
             }
@@ -435,7 +432,7 @@ trait TreeBuilderModes
     private function _handle_characters_in_body($token)
     {
         $data = $token->data ?? '';
-        if (Str::contains($data, "\x00")) {
+        if (strpos($data, "\x00") !== false) {
             $this->_parse_error('invalid-codepoint');
             $data = str_replace("\x00", '', $data);
         }
@@ -1199,7 +1196,7 @@ trait TreeBuilderModes
     {
         if ($token instanceof CharacterTokens) {
             $data = $token->data ?? '';
-            if (Str::contains($data, "\x00")) {
+            if (strpos($data, "\x00") !== false) {
                 $this->_parse_error('unexpected-null-character');
                 $data = str_replace("\x00", '', $data);
                 if ($data === '') {
@@ -1333,7 +1330,7 @@ trait TreeBuilderModes
     {
         if ($token instanceof CharacterTokens) {
             $data = $token->data;
-            if (Str::contains($data, "\x0c")) {
+            if (strpos($data, "\x0c") !== false) {
                 $this->_parse_error('invalid-codepoint-in-table-text');
                 $data = str_replace("\x0c", '', $data);
             }
@@ -1751,11 +1748,11 @@ trait TreeBuilderModes
     {
         if ($token instanceof CharacterTokens) {
             $data = $token->data ?? '';
-            if (Str::contains($data, "\x00")) {
+            if (strpos($data, "\x00") !== false) {
                 $this->_parse_error('invalid-codepoint-in-select');
                 $data = str_replace("\x00", '', $data);
             }
-            if (Str::contains($data, "\x0c")) {
+            if (strpos($data, "\x0c") !== false) {
                 $this->_parse_error('invalid-codepoint-in-select');
                 $data = str_replace("\x0c", '', $data);
             }
