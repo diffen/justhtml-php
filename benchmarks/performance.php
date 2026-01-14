@@ -11,8 +11,9 @@ function perf_parser_available(string $name): bool
     switch ($name) {
         case 'justhtml':
         case 'domdocument':
-        case 'dom/html-document':
             return true;
+        case 'dom/html-document':
+            return class_exists('DOM\\HTMLDocument');
         case 'masterminds/html5':
             return class_exists('Masterminds\\HTML5');
         case 'symfony/dom-crawler':
