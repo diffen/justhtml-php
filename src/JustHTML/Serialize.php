@@ -268,6 +268,7 @@ final class Serialize
 
         foreach ($node->attrs as $attrName => $attrValue) {
             $value = $attrValue ?? '';
+            $attrName = (string)$attrName;
             $displayName = $attrName;
             if ($namespace !== null && $namespace !== 'html') {
                 $lowerName = strtolower($attrName);
@@ -279,7 +280,7 @@ final class Serialize
         }
 
         usort($displayAttrs, static function ($a, $b) {
-            return $a[0] <=> $b[0];
+            return strcmp($a[0], $b[0]);
         });
 
         foreach ($displayAttrs as [$displayName, $value]) {
