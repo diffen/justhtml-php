@@ -8,6 +8,26 @@ class TreeBuilder
 {
     use TreeBuilderModes;
 
+    private const AFTER_HEAD_HEAD_TAGS = [
+        'base' => true,
+        'basefont' => true,
+        'bgsound' => true,
+        'link' => true,
+        'meta' => true,
+        'title' => true,
+        'style' => true,
+        'script' => true,
+        'noscript' => true,
+    ];
+    private const AFTER_HEAD_END_TAGS = [
+        'html' => true,
+        'br' => true,
+    ];
+    private const TABLE_TEXT_START_TAGS = [
+        'style' => true,
+        'script' => true,
+    ];
+
     public bool $collect_errors;
     /** @var array<int, ParseError> */
     public array $errors;
@@ -31,7 +51,6 @@ class TreeBuilder
     /** @var array<int, mixed> */
     public array $active_formatting;
     public bool $insert_from_table;
-    /** @var array<int, string> */
     public string $pending_table_text;
     /** @var array<int, int> */
     public array $template_modes;
