@@ -15,6 +15,7 @@ root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 for v in "${versions[@]}"; do
   echo "== PHP ${v} =="
+  docker run --rm -v "${root_dir}":/work -w /work "php:${v}-cli" php -v
   docker run --rm -v "${root_dir}":/work -w /work "php:${v}-cli" php run_tests.php
   echo ""
 done
