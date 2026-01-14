@@ -1,6 +1,6 @@
 # JustHTML for PHP
 
-Pure-PHP HTML5 parser ported from Simon Willison's JustHTML, targeting PHP 7.4+.
+PHP HTML5 parser ported from Emil Stenström's JustHTML, targeting PHP 7.4+.
 It is built for correctness and passes the html5lib test suite (tree builder,
 tokenizer, serializer, and encoding tests). Scripted fixtures in the suite are
 intentionally skipped.
@@ -76,4 +76,4 @@ php run_tests.php
 
 - This repo includes a copy of html5lib tests in `html5lib-tests`.
 - For non-Composer use, include `src/JustHTML/*.php` with your own autoloader.
-- Ported from Simon Willison's JustHTML (Python) under the MIT License.
+- Ported from Emil Stenström's JustHTML (Python) under the MIT License.
