@@ -69,21 +69,24 @@ php bin/justhtml page.html --selector "main p" --format text
 ## Comparison to other parsers
 
 Compliance results are based on the html5lib tree-construction tests. Performance
-results are from `benchmarks/performance.php` using the bundled fixtures (3 files,
-3 iterations).
+results are from `benchmarks/performance.php` using a Common Crawl 1,000-document
+fixture set (avg ms/doc: lower is better). Generate fixtures with
+`php benchmarks/fetch_commoncrawl.php` and run with
+`--dir benchmarks/fixtures/commoncrawl-1k --iterations 1`.
 
 Benchmarks here were run on PHP 8.5.1 with libxml 2.9.13. Run
 `php benchmarks/correctness.php --markdown` and
-`php benchmarks/performance.php --markdown` to regenerate.
+`php benchmarks/performance.php --dir benchmarks/fixtures/commoncrawl-1k --iterations 1 --markdown`
+to regenerate.
 
 | Parser | Compliance | Avg ms/doc | Selectors | Notes |
 |--------|------------|-----------:|-----------|-------|
-| **JustHTML** | 1743/1743 (100%) | 1.93 | CSS | Full spec compliance |
-| DOMDocument (libxml) | 54/1743 (3.1%) | 0.20 | None | Baseline, not HTML5-correct |
-| DOM\HTMLDocument | 831/1743 (47.7%) | 0.14 | CSS | HTML5 DOM (new DOM extension) |
-| masterminds/html5 | 75/1743 (4.3%) | 1.12 | None | HTML5 parser, low compliance |
-| voku/simple_html_dom | 29/1743 (1.7%) | 0.30 | CSS | Tolerant DOM wrapper |
-| symfony/dom-crawler | 54/1743 (3.1%) | 0.93 | CSS | Wrapper over DOMDocument (libxml) |
+| **JustHTML** | 1743/1743 (100%) | 11.75 | CSS | Full spec compliance |
+| DOMDocument (libxml) | 54/1743 (3.1%) | 1.17 | XPath | Baseline, not HTML5-correct |
+| DOM\HTMLDocument | 831/1743 (47.7%) | 0.70 | CSS | HTML5 DOM (new DOM extension) |
+| masterminds/html5 | 75/1743 (4.3%) | 5.53 | XPath | HTML5 parser, low compliance |
+| voku/simple_html_dom | 29/1743 (1.7%) | 3.49 | CSS | Tolerant DOM wrapper |
+| symfony/dom-crawler | 54/1743 (3.1%) | 5.36 | CSS/XPath | Wrapper over DOMDocument (libxml) |
 
 See `benchmarks/README.md` for parser install instructions and details.
 

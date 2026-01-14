@@ -97,12 +97,11 @@ function perf_parse_voku(string $html): void
     \voku\helper\HtmlDomParser::str_get_html($html);
 }
 
-/** @return array{items:int,seconds:float,avg_ms:float,peak_bytes:?int} */
-function run_perf(string $parser, array $fixtures, int $iterations, bool $measure_mem): array
+/** @return array{items:int,seconds:float,avg_ms:float} */
+function run_perf(string $parser, array $fixtures, int $iterations): array
 {
     gc_collect_cycles();
     $items = count($fixtures) * $iterations;
-    $peak_before = memory_get_peak_usage(true);
     $start = microtime(true);
 
     for ($i = 0; $i < $iterations; $i++) {
@@ -124,22 +123,93 @@ function run_perf(string $parser, array $fixtures, int $iterations, bool $measur
     }
 
     $elapsed = microtime(true) - $start;
-    $peak_after = memory_get_peak_usage(true);
-    $peak_delta = $measure_mem ? max(0, $peak_after - $peak_before) : null;
     $avg_ms = $items > 0 ? ($elapsed * 1000) / $items : 0.0;
 
     return [
         'items' => $items,
         'seconds' => $elapsed,
         'avg_ms' => $avg_ms,
-        'peak_bytes' => $peak_delta,
     ];
+}
+
+function get_max_rss_bytes(): ?int
+{
+    if (!function_exists('getrusage')) {
+        return null;
+    }
+    $usage = getrusage();
+    if (!isset($usage['ru_maxrss'])) {
+        return null;
+    }
+    $rss = (int)$usage['ru_maxrss'];
+    if (PHP_OS_FAMILY === 'Darwin') {
+        return $rss;
+    }
+    return $rss * 1024;
+}
+
+/** @return array{items:int,seconds:float,avg_ms:float,rss_bytes:?int}|array{note:string} */
+function run_perf_with_rss(
+    string $parser,
+    array $fixtures,
+    string $dir,
+    int $iterations,
+    bool $measure_rss
+): array {
+    if (!$measure_rss) {
+        $data = run_perf($parser, $fixtures, $iterations);
+        $data['rss_bytes'] = null;
+        return $data;
+    }
+
+    $cmd_parts = [
+        PHP_BINARY,
+        __FILE__,
+        '--child',
+        '--parser',
+        $parser,
+        '--iterations',
+        (string)$iterations,
+        '--dir',
+        $dir,
+    ];
+    $cmd = implode(' ', array_map('escapeshellarg', $cmd_parts));
+
+    $descriptor_spec = [
+        0 => ['pipe', 'r'],
+        1 => ['pipe', 'w'],
+        2 => ['pipe', 'w'],
+    ];
+    $proc = proc_open($cmd, $descriptor_spec, $pipes);
+    if (!is_resource($proc)) {
+        $data = run_perf($parser, $fixtures, $iterations);
+        $data['rss_bytes'] = null;
+        return $data;
+    }
+    fclose($pipes[0]);
+    $stdout = stream_get_contents($pipes[1]);
+    $stderr = stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    $status = proc_close($proc);
+
+    $data = json_decode(trim((string)$stdout), true);
+    if ($status !== 0 || !is_array($data)) {
+        $fallback = run_perf($parser, $fixtures, $iterations);
+        $fallback['rss_bytes'] = null;
+        return $fallback;
+    }
+    $data['rss_bytes'] = isset($data['rss_bytes']) ? (int)$data['rss_bytes'] : null;
+    if ($data['rss_bytes'] <= 0) {
+        $data['rss_bytes'] = null;
+    }
+    return $data;
 }
 
 function format_bytes(?int $bytes): string
 {
     if ($bytes === null) {
-        return '-';
+        return 'n/a';
     }
     if ($bytes < 1024) {
         return $bytes . ' B';
@@ -157,8 +227,8 @@ function format_bytes(?int $bytes): string
 
 function render_perf_markdown(array $results): void
 {
-    echo "| Parser | Avg ms/doc | Total s | Items | Peak delta |\n";
-    echo "|--------|-----------:|--------:|------:|-----------:|\n";
+    echo "| Parser | Avg ms/doc | Total s | Items | Max RSS |\n";
+    echo "|--------|-----------:|--------:|------:|--------:|\n";
     foreach ($results as $name => $data) {
         if (isset($data['note'])) {
             echo '| ' . $name . ' | - | - | - | ' . $data['note'] . " |\n";
@@ -166,7 +236,7 @@ function render_perf_markdown(array $results): void
         }
         echo '| ' . $name . ' | ' . sprintf('%.2f', $data['avg_ms']) . ' | '
             . sprintf('%.2f', $data['seconds']) . ' | ' . $data['items'] . ' | '
-            . format_bytes($data['peak_bytes']) . " |\n";
+            . format_bytes($data['rss_bytes']) . " |\n";
     }
 }
 
@@ -175,7 +245,8 @@ array_shift($args);
 $selected = [];
 $iterations = 3;
 $markdown = false;
-$measure_mem = true;
+$measure_rss = true;
+$child = false;
 $dir = __DIR__ . '/fixtures';
 
 for ($i = 0; $i < count($args); $i++) {
@@ -202,8 +273,12 @@ for ($i = 0; $i < count($args); $i++) {
         $markdown = true;
         continue;
     }
-    if ($arg === '--no-mem') {
-        $measure_mem = false;
+    if ($arg === '--no-rss') {
+        $measure_rss = false;
+        continue;
+    }
+    if ($arg === '--child') {
+        $child = true;
         continue;
     }
     if (strpos($arg, '--dir=') === 0) {
@@ -215,6 +290,27 @@ for ($i = 0; $i < count($args); $i++) {
         $i += 1;
         continue;
     }
+}
+
+$parser_arg = $selected[0] ?? '';
+if ($child) {
+    if ($parser_arg === '') {
+        fwrite(STDERR, "Child mode requires --parser\n");
+        exit(1);
+    }
+    if (!perf_parser_available($parser_arg)) {
+        fwrite(STDERR, "Parser not available: {$parser_arg}\n");
+        exit(1);
+    }
+    $fixtures = load_fixtures($dir);
+    if (!$fixtures) {
+        fwrite(STDERR, "No fixtures found in {$dir}\n");
+        exit(1);
+    }
+    $result = run_perf($parser_arg, $fixtures, $iterations);
+    $result['rss_bytes'] = get_max_rss_bytes();
+    echo json_encode($result, JSON_UNESCAPED_SLASHES) . "\n";
+    exit(0);
 }
 
 $fixtures = load_fixtures($dir);
@@ -234,7 +330,7 @@ foreach ($parsers as $parser) {
         $results[$parser] = ['note' => 'not installed'];
         continue;
     }
-    $results[$parser] = run_perf($parser, $fixtures, $iterations, $measure_mem);
+    $results[$parser] = run_perf_with_rss($parser, $fixtures, $dir, $iterations, $measure_rss);
 }
 
 if ($markdown) {
@@ -247,6 +343,10 @@ foreach ($results as $name => $data) {
         echo $name . ': ' . $data['note'] . "\n";
         continue;
     }
-    echo $name . ': ' . sprintf('%.2f', $data['avg_ms']) . ' ms/doc, '
-        . sprintf('%.2f', $data['seconds']) . " s total\n";
+    $line = $name . ': ' . sprintf('%.2f', $data['avg_ms']) . ' ms/doc, '
+        . sprintf('%.2f', $data['seconds']) . ' s total';
+    if (array_key_exists('rss_bytes', $data) && $data['rss_bytes'] !== null) {
+        $line .= ', max RSS ' . format_bytes($data['rss_bytes']);
+    }
+    echo $line . "\n";
 }
