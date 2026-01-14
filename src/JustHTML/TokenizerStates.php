@@ -322,17 +322,48 @@ trait TokenizerStates
 
     private function stateBeforeAttributeName(): bool
     {
+        $buffer = $this->buffer;
+        $length = $this->length;
         while (true) {
-            $c = $this->getChar();
-            if ($c === null) {
-                $this->emitError('eof-in-tag');
-                $this->flushText();
-                $this->emitToken(new EOFToken());
-                return true;
+            $pos = $this->pos;
+
+            // Handle reconsume - must check this BEFORE skipping whitespace
+            if ($this->reconsume) {
+                $this->reconsume = false;
+                $c = $this->currentChar;
+                if ($c === null) {
+                    $this->emitError('eof-in-tag');
+                    $this->flushText();
+                    $this->emitToken(new EOFToken());
+                    return true;
+                }
+                // If reconsumed char is whitespace, continue loop to skip it
+                if ($c === "\t" || $c === "\n" || $c === "\f" || $c === ' ') {
+                    continue;
+                }
+            } else {
+                // Skip whitespace quickly using strspn
+                if ($pos < $length) {
+                    $wsLen = strspn($buffer, "\t\n\f \r", $pos);
+                    if ($wsLen > 0) {
+                        $pos += $wsLen;
+                        $this->pos = $pos;
+                    }
+                }
+
+                if ($pos >= $length) {
+                    $this->emitError('eof-in-tag');
+                    $this->flushText();
+                    $this->emitToken(new EOFToken());
+                    return true;
+                }
+
+                $c = $buffer[$pos];
+                $this->pos = $pos + 1;
+                $this->currentChar = $c;
+                $this->ignoreLf = false;
             }
-            if ($c === "\t" || $c === "\n" || $c === "\f" || $c === ' ') {
-                continue;
-            }
+
             if ($c === '/') {
                 $this->state = self::SELF_CLOSING_START_TAG;
                 return false;
@@ -503,17 +534,32 @@ trait TokenizerStates
 
     private function stateAfterAttributeName(): bool
     {
+        $buffer = $this->buffer;
+        $length = $this->length;
         while (true) {
-            $c = $this->getChar();
-            if ($c === null) {
+            $pos = $this->pos;
+
+            // Skip whitespace quickly using strspn
+            if ($pos < $length) {
+                $wsLen = strspn($buffer, "\t\n\f \r", $pos);
+                if ($wsLen > 0) {
+                    $pos += $wsLen;
+                    $this->pos = $pos;
+                }
+            }
+
+            if ($pos >= $length) {
                 $this->emitError('eof-in-tag');
                 $this->flushText();
                 $this->emitToken(new EOFToken());
                 return true;
             }
-            if ($c === "\t" || $c === "\n" || $c === "\f" || $c === ' ') {
-                continue;
-            }
+
+            $c = $buffer[$pos];
+            $this->pos = $pos + 1;
+            $this->currentChar = $c;
+            $this->ignoreLf = false;
+
             if ($c === '/') {
                 $this->finishAttribute();
                 $this->state = self::SELF_CLOSING_START_TAG;
@@ -553,17 +599,32 @@ trait TokenizerStates
 
     private function stateBeforeAttributeValue(): bool
     {
+        $buffer = $this->buffer;
+        $length = $this->length;
         while (true) {
-            $c = $this->getChar();
-            if ($c === null) {
+            $pos = $this->pos;
+
+            // Skip whitespace quickly using strspn
+            if ($pos < $length) {
+                $wsLen = strspn($buffer, "\t\n\f \r", $pos);
+                if ($wsLen > 0) {
+                    $pos += $wsLen;
+                    $this->pos = $pos;
+                }
+            }
+
+            if ($pos >= $length) {
                 $this->emitError('eof-in-tag');
                 $this->flushText();
                 $this->emitToken(new EOFToken());
                 return true;
             }
-            if ($c === "\t" || $c === "\n" || $c === "\f" || $c === ' ') {
-                continue;
-            }
+
+            $c = $buffer[$pos];
+            $this->pos = $pos + 1;
+            $this->currentChar = $c;
+            $this->ignoreLf = false;
+
             if ($c === '"') {
                 $this->state = self::ATTRIBUTE_VALUE_DOUBLE;
                 return false;
