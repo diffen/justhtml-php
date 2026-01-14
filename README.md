@@ -72,21 +72,21 @@ Compliance results are based on the html5lib tree-construction tests. Performanc
 results are from `benchmarks/performance.php` using a Common Crawl 1,000-document
 fixture set (avg ms/doc: lower is better). Generate fixtures with
 `php benchmarks/fetch_commoncrawl.php` and run with
-`--dir benchmarks/fixtures/commoncrawl-1k --iterations 1`.
+`--dir benchmarks/fixtures/commoncrawl-1k --iterations 3`.
 
 Benchmarks here were run on PHP 8.5.1 with libxml 2.9.13. Run
 `php benchmarks/correctness.php --markdown` and
-`php benchmarks/performance.php --dir benchmarks/fixtures/commoncrawl-1k --iterations 1 --markdown`
+`php benchmarks/performance.php --dir benchmarks/fixtures/commoncrawl-1k --iterations 3 --markdown`
 to regenerate.
 
 | Parser | Compliance | Avg ms/doc | Selectors | Notes |
 |--------|------------|-----------:|-----------|-------|
-| **JustHTML** | 1743/1743 (100%) | 6.72 | CSS | Full spec compliance |
-| DOMDocument (libxml) | 54/1743 (3.1%) | 1.16 | XPath | Baseline, not HTML5-correct |
-| DOM\HTMLDocument | 831/1743 (47.7%) | 0.71 | CSS | HTML5 DOM (new DOM extension) |
-| masterminds/html5 | 75/1743 (4.3%) | 5.54 | XPath | HTML5 parser, low compliance |
-| voku/simple_html_dom | 29/1743 (1.7%) | 3.46 | CSS | Tolerant DOM wrapper |
-| symfony/dom-crawler | 54/1743 (3.1%) | 5.30 | CSS/XPath | Wrapper over DOMDocument (libxml) |
+| **JustHTML** | 1743/1743 (100%) | 6.99 | CSS | Full spec compliance |
+| DOMDocument (libxml) | 54/1743 (3.1%) | 1.21 | XPath | Baseline, not HTML5-correct |
+| DOM\HTMLDocument | 831/1743 (47.7%) | 0.72 | CSS | HTML5 DOM (new DOM extension) |
+| masterminds/html5 | 75/1743 (4.3%) | 5.67 | XPath | HTML5 parser, low compliance |
+| voku/simple_html_dom | 29/1743 (1.7%) | 3.53 | CSS | Tolerant DOM wrapper |
+| symfony/dom-crawler | 54/1743 (3.1%) | 5.41 | CSS/XPath | Wrapper over DOMDocument (libxml) |
 
 See `benchmarks/README.md` for parser install instructions and details.
 
