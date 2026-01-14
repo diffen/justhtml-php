@@ -330,7 +330,13 @@ foreach ($parsers as $parser) {
         $results[$parser] = ['note' => 'not installed'];
         continue;
     }
-    $results[$parser] = run_perf_with_rss($parser, $fixtures, $dir, $iterations, $measure_rss);
+    $results[$parser] = run_perf_with_rss(
+        $parser,
+        $fixtures,
+        $dir,
+        $iterations,
+        $measure_rss
+    );
 }
 
 if ($markdown) {
