@@ -11,6 +11,24 @@ final class Entities
     /** @var array<string, string>|null */
     private static ?array $namedEntities = null;
 
+    /**
+     * Fast-path lookup for most common entities.
+     * These are checked first before loading the full entity map.
+     * @var array<string, string>
+     */
+    private static array $commonEntities = [
+        'amp' => '&',
+        'lt' => '<',
+        'gt' => '>',
+        'quot' => '"',
+        'apos' => "'",
+        'nbsp' => "\u{00A0}",
+        'AMP' => '&',
+        'LT' => '<',
+        'GT' => '>',
+        'QUOT' => '"',
+    ];
+
     /** @var array<string, bool> */
     private static array $legacyEntities = [
         "gt" => true,
@@ -159,10 +177,21 @@ final class Entities
             return self::$namedEntities;
         }
 
-        $path = dirname(__DIR__, 2) . '/data/entities.json';
-        $json = file_get_contents($path);
+        // Use pre-compiled PHP array for faster loading (no JSON parsing)
+        $path = dirname(__DIR__, 2) . '/data/entities.php';
+        if (file_exists($path)) {
+            $data = require $path;
+            if (is_array($data)) {
+                self::$namedEntities = $data;
+                return $data;
+            }
+        }
+
+        // Fallback to JSON if PHP file doesn't exist
+        $jsonPath = dirname(__DIR__, 2) . '/data/entities.json';
+        $json = file_get_contents($jsonPath);
         if ($json === false) {
-            throw new \RuntimeException('Failed to load entity map at ' . $path);
+            throw new \RuntimeException('Failed to load entity map at ' . $jsonPath);
         }
 
         $data = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
@@ -248,7 +277,14 @@ final class Entities
 
     public static function decodeEntitiesInText(string $text, bool $inAttribute = false): string
     {
-        $namedEntities = self::loadNamedEntities();
+        // Fast path: if no ampersand, return as-is
+        if (strpos($text, '&') === false) {
+            return $text;
+        }
+
+        $namedEntities = null;  // Lazy-load only if needed
+        $commonEntities = self::$commonEntities;
+        $legacyEntities = self::$legacyEntities;
 
         $result = [];
         $i = 0;
@@ -332,7 +368,19 @@ final class Entities
                 continue;
             }
 
-            if ($hasSemicolon && array_key_exists($entityName, $namedEntities)) {
+            // Fast-path: check common entities first (covers >90% of real-world cases)
+            if ($hasSemicolon && isset($commonEntities[$entityName])) {
+                $result[] = $commonEntities[$entityName];
+                $i = $j + 1;
+                continue;
+            }
+
+            // Lazy-load full entity map only when needed
+            if ($namedEntities === null) {
+                $namedEntities = self::loadNamedEntities();
+            }
+
+            if ($hasSemicolon && isset($namedEntities[$entityName])) {
                 $result[] = $namedEntities[$entityName];
                 $i = $j + 1;
                 continue;
@@ -343,10 +391,17 @@ final class Entities
                 $bestMatchLen = 0;
                 for ($k = strlen($entityName); $k > 0; $k--) {
                     $prefix = substr($entityName, 0, $k);
-                    if (isset(self::$legacyEntities[$prefix]) && array_key_exists($prefix, $namedEntities)) {
-                        $bestMatch = $namedEntities[$prefix];
-                        $bestMatchLen = $k;
-                        break;
+                    if (isset($legacyEntities[$prefix])) {
+                        if (isset($commonEntities[$prefix])) {
+                            $bestMatch = $commonEntities[$prefix];
+                            $bestMatchLen = $k;
+                            break;
+                        }
+                        if (isset($namedEntities[$prefix])) {
+                            $bestMatch = $namedEntities[$prefix];
+                            $bestMatchLen = $k;
+                            break;
+                        }
                     }
                 }
                 if ($bestMatch !== null) {
@@ -356,31 +411,41 @@ final class Entities
                 }
             }
 
-            if (isset(self::$legacyEntities[$entityName]) && array_key_exists($entityName, $namedEntities)) {
-                $nextChar = $j < $length ? $text[$j] : null;
-                if ($inAttribute && $nextChar !== null && ((($nextChar >= 'a' && $nextChar <= 'z')
-                    || ($nextChar >= 'A' && $nextChar <= 'Z')
-                    || ($nextChar >= '0' && $nextChar <= '9')
-                    || $nextChar === '=')
-                )) {
-                    $result[] = '&';
-                    $i += 1;
+            if (isset($legacyEntities[$entityName])) {
+                $entityValue = $commonEntities[$entityName] ?? ($namedEntities[$entityName] ?? null);
+                if ($entityValue !== null) {
+                    $nextChar = $j < $length ? $text[$j] : null;
+                    if ($inAttribute && $nextChar !== null && ((($nextChar >= 'a' && $nextChar <= 'z')
+                        || ($nextChar >= 'A' && $nextChar <= 'Z')
+                        || ($nextChar >= '0' && $nextChar <= '9')
+                        || $nextChar === '=')
+                    )) {
+                        $result[] = '&';
+                        $i += 1;
+                        continue;
+                    }
+
+                    $result[] = $entityValue;
+                    $i = $j;
                     continue;
                 }
-
-                $result[] = $namedEntities[$entityName];
-                $i = $j;
-                continue;
             }
 
             $bestMatch = null;
             $bestMatchLen = 0;
             for ($k = strlen($entityName); $k > 0; $k--) {
                 $prefix = substr($entityName, 0, $k);
-                if (isset(self::$legacyEntities[$prefix]) && array_key_exists($prefix, $namedEntities)) {
-                    $bestMatch = $namedEntities[$prefix];
-                    $bestMatchLen = $k;
-                    break;
+                if (isset($legacyEntities[$prefix])) {
+                    if (isset($commonEntities[$prefix])) {
+                        $bestMatch = $commonEntities[$prefix];
+                        $bestMatchLen = $k;
+                        break;
+                    }
+                    if (isset($namedEntities[$prefix])) {
+                        $bestMatch = $namedEntities[$prefix];
+                        $bestMatchLen = $k;
+                        break;
+                    }
                 }
             }
 
