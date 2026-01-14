@@ -117,6 +117,9 @@ Intro
 $markdown = $doc->toMarkdown();
 ```
 
+Note: `toMarkdown()` is a convenience helper (best-effort conversion) and not
+part of the HTML specification.
+
 ## Streaming
 
 ```php
@@ -149,10 +152,10 @@ to regenerate.
 | Parser | Spec compliance (html5lib-tests pass rate) | Speed: Avg ms/doc (lower is better) | Selectors | Notes |
 |--------|---------------------------------------------|------------------------------------:|-----------|-------|
 | **JustHTML** | 1743/1743 (100%) | 6.99 | CSS | Full spec compliance |
-| DOM\HTMLDocument | 831/1743 (47.7%) | 0.72 | CSS | HTML5 DOM (new DOM extension) |
-| DOMDocument (libxml) | 54/1743 (3.1%) | 1.21 | XPath | Baseline, not HTML5-correct |
+| DOM\HTMLDocument | 831/1743 (47.7%) | 0.72 | CSS | Native ext/dom HTML5 DOM (PHP 8.4+) |
+| DOMDocument (libxml) | 54/1743 (3.1%) | 1.21 | XPath | Legacy HTML parser (libxml2), not HTML5-correct |
 | masterminds/html5 | 75/1743 (4.3%) | 5.67 | XPath | HTML5 parser, low compliance |
-| voku/simple_html_dom | 29/1743 (1.7%) | 3.53 | CSS | Tolerant DOM wrapper |
+| voku/simple_html_dom | 29/1743 (1.7%) | 3.53 | CSS | Lenient DOM wrapper, low compliance |
 | symfony/dom-crawler | 54/1743 (3.1%) | 5.41 | CSS/XPath | Wrapper over DOMDocument (libxml) |
 
 See `benchmarks/README.md` for parser install instructions and details.
