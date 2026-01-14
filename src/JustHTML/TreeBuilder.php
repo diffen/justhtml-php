@@ -506,7 +506,11 @@ class TreeBuilder
         $index = count($this->open_elements) - 1;
         while ($index >= 0) {
             if ($this->open_elements[$index]->name === $name) {
-                array_splice($this->open_elements, $index);
+                if ($index === count($this->open_elements) - 1) {
+                    array_pop($this->open_elements);
+                } else {
+                    array_splice($this->open_elements, $index);
+                }
                 return;
             }
             $index -= 1;
@@ -522,7 +526,11 @@ class TreeBuilder
                 if ($index !== count($this->open_elements) - 1) {
                     $this->_parse_error('end-tag-too-early');
                 }
-                array_splice($this->open_elements, $index);
+                if ($index === count($this->open_elements) - 1) {
+                    array_pop($this->open_elements);
+                } else {
+                    array_splice($this->open_elements, $index);
+                }
                 return;
             }
             if ($this->_is_special_element($node)) {
@@ -551,7 +559,11 @@ class TreeBuilder
     {
         foreach ($this->open_elements as $index => $current) {
             if ($current === $node) {
-                array_splice($this->open_elements, (int)$index, 1);
+                if ($index === count($this->open_elements) - 1) {
+                    array_pop($this->open_elements);
+                } else {
+                    array_splice($this->open_elements, (int)$index, 1);
+                }
                 return true;
             }
         }
@@ -659,7 +671,11 @@ class TreeBuilder
                 break;
             }
             if ($entry['name'] === $name) {
-                array_splice($this->active_formatting, $i, 1);
+                if ($i === count($this->active_formatting) - 1) {
+                    array_pop($this->active_formatting);
+                } else {
+                    array_splice($this->active_formatting, $i, 1);
+                }
                 return;
             }
         }
@@ -669,7 +685,11 @@ class TreeBuilder
     {
         for ($i = count($this->open_elements) - 1; $i >= 0; $i--) {
             if ($this->open_elements[$i]->name === $name) {
-                array_splice($this->open_elements, $i, 1);
+                if ($i === count($this->open_elements) - 1) {
+                    array_pop($this->open_elements);
+                } else {
+                    array_splice($this->open_elements, $i, 1);
+                }
                 return;
             }
         }
@@ -705,7 +725,11 @@ class TreeBuilder
 
     private function _remove_formatting_entry(int $index): void
     {
-        array_splice($this->active_formatting, $index, 1);
+        if ($index === count($this->active_formatting) - 1) {
+            array_pop($this->active_formatting);
+        } else {
+            array_splice($this->active_formatting, $index, 1);
+        }
     }
 
     private function _reconstruct_active_formatting_elements(): void
