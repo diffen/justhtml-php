@@ -41,7 +41,8 @@ echo $doc->toHtml();
 ## Comparison to other parsers
 
 Compliance results are based on the html5lib tree-construction tests. Performance
-results are from `benchmarks/performance.php` using the bundled fixtures.
+results are from `benchmarks/performance.php` using the bundled fixtures (3 files,
+3 iterations).
 
 Benchmarks here were run on PHP 8.5.1 with libxml 2.9.13. Run
 `php benchmarks/correctness.php --markdown` and
@@ -49,13 +50,13 @@ Benchmarks here were run on PHP 8.5.1 with libxml 2.9.13. Run
 
 | Parser | Compliance | Avg ms/doc | Selectors | Notes |
 |--------|------------|-----------:|-----------|-------|
-| **JustHTML** | 1743/1743 (100%) | 1.59 | CSS | Full spec compliance |
-| DOMDocument (libxml) | 54/1743 (3.1%) | 0.32 | None | Baseline, not HTML5-correct |
-| DOM\HTMLDocument | 831/1743 (47.7%) | 0.21 | CSS | HTML5 DOM (new DOM extension) |
-| masterminds/html5 | TBD | TBD | None | Install dependency and run benchmarks |
-| voku/simple_html_dom | TBD | TBD | CSS | Install dependency and run benchmarks |
-| paquettg/php-html-parser | TBD | TBD | CSS | Install dependency and run benchmarks |
-| symfony/dom-crawler | TBD | TBD | CSS | Wrapper over DOMDocument (libxml) |
+| **JustHTML** | 1743/1743 (100%) | 1.91 | CSS | Full spec compliance |
+| DOMDocument (libxml) | 54/1743 (3.1%) | 0.31 | None | Baseline, not HTML5-correct |
+| DOM\HTMLDocument | 831/1743 (47.7%) | 0.40 | CSS | HTML5 DOM (new DOM extension) |
+| masterminds/html5 | 75/1743 (4.3%) | 1.27 | None | HTML5 parser, low compliance |
+| voku/simple_html_dom | 29/1743 (1.7%) | 0.30 | CSS | Tolerant DOM wrapper |
+| paquettg/php-html-parser | 0/50 (0.0% sample) | 4.23 | CSS | Full suite too slow (sample only) |
+| symfony/dom-crawler | 54/1743 (3.1%) | 0.93 | CSS | Wrapper over DOMDocument (libxml) |
 
 See `benchmarks/README.md` for parser install instructions and details.
 

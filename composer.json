@@ -9,7 +9,10 @@
   "autoload": {
     "psr-4": {
       "JustHTML\\": "src/JustHTML/"
-    }
+    },
+    "classmap": [
+      "src/JustHTML/"
+    ]
   },
   "bin": [
     "bin/justhtml"
@@ -20,5 +23,12 @@
     "dom",
     "selector",
     "justhtml"
-  ]
+  ],
+  "require-dev": {
+    "masterminds/html5": "^2",
+    "voku/simple_html_dom": "^4.8",
+    "paquettg/php-html-parser": "^2.2",
+    "symfony/dom-crawler": "^5.4",
+    "symfony/css-selector": "^5.4"
+  }
 }

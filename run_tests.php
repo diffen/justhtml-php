@@ -25,7 +25,7 @@ $required = [
     'Constants.php',
     'Entities.php',
     'Tokens.php',
-    'Context.php',
+    'FragmentContext.php',
     'Node.php',
     'Serialize.php',
     'TreeBuilderUtils.php',

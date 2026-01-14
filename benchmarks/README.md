@@ -16,6 +16,7 @@ Options:
 - `--parser <name>` (repeatable)
 - `--limit <n>` (limit total tests)
 - `--dir <path>` (override html5lib test path)
+- If a parser is very slow, use `--limit` and note the sample size.
 
 ## Performance
 
@@ -31,6 +32,8 @@ Options:
 - `--iterations <n>`
 - `--no-mem` (skip peak memory delta)
 - `--dir <path>` (override fixture path)
+- Some dependencies emit PHP 8.5 deprecation warnings; suppress with
+  `php -d error_reporting='E_ALL & ~E_DEPRECATED'`.
 
 ## Optional parser dependencies
 

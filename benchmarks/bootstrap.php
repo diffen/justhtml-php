@@ -16,7 +16,7 @@ $required = [
     'Constants.php',
     'Entities.php',
     'Tokens.php',
-    'Context.php',
+    'FragmentContext.php',
     'Markdown.php',
     'Selector.php',
     'Stream.php',
