@@ -32,7 +32,7 @@ class TreeBuilder
     public array $active_formatting;
     public bool $insert_from_table;
     /** @var array<int, string> */
-    public array $pending_table_text;
+    public string $pending_table_text;
     /** @var array<int, int> */
     public array $template_modes;
     public ?int $tokenizer_state_override;
@@ -58,7 +58,7 @@ class TreeBuilder
         $this->ignore_lf = false;
         $this->active_formatting = [];
         $this->insert_from_table = false;
-        $this->pending_table_text = [];
+        $this->pending_table_text = '';
         $this->template_modes = [];
         $this->tokenizer_state_override = null;
 
@@ -819,8 +819,8 @@ class TreeBuilder
 
     private function _flush_pending_table_text(): void
     {
-        $data = $this->pending_table_text ? implode('', $this->pending_table_text) : '';
-        $this->pending_table_text = [];
+        $data = $this->pending_table_text;
+        $this->pending_table_text = '';
         if ($data === '') {
             return;
         }

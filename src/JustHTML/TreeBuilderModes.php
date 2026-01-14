@@ -1204,7 +1204,7 @@ trait TreeBuilderModes
                 }
                 $token = new CharacterTokens($data);
             }
-            $this->pending_table_text = [];
+            $this->pending_table_text = '';
             $this->table_text_original_mode = $this->mode;
             $this->mode = InsertionMode::IN_TABLE_TEXT;
             return ['reprocess', InsertionMode::IN_TABLE_TEXT, $token];
@@ -1335,7 +1335,7 @@ trait TreeBuilderModes
                 $data = str_replace("\x0c", '', $data);
             }
             if ($data !== '') {
-                $this->pending_table_text[] = $data;
+                $this->pending_table_text .= $data;
             }
             return null;
         }
