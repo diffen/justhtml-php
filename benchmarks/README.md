@@ -40,7 +40,7 @@ Options:
 Install any of these to include them in benchmark results:
 
 ```sh
-composer require --dev masterminds/html5 voku/simple_html_dom paquettg/php-html-parser symfony/dom-crawler
+composer require --dev masterminds/html5 voku/simple_html_dom symfony/dom-crawler
 ```
 
 Available parser labels in scripts:
@@ -50,5 +50,4 @@ Available parser labels in scripts:
 - `dom/html-document`
 - `masterminds/html5`
 - `voku/simple_html_dom`
-- `paquettg/php-html-parser`
 - `symfony/dom-crawler`

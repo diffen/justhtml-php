@@ -19,8 +19,6 @@ function perf_parser_available(string $name): bool
             return class_exists('Symfony\\Component\\DomCrawler\\Crawler');
         case 'voku/simple_html_dom':
             return class_exists('voku\\helper\\HtmlDomParser');
-        case 'paquettg/php-html-parser':
-            return class_exists('PHPHtmlParser\\Dom');
         default:
             return false;
     }
@@ -34,7 +32,6 @@ function perf_parser_list(): array
         'dom/html-document',
         'masterminds/html5',
         'voku/simple_html_dom',
-        'paquettg/php-html-parser',
         'symfony/dom-crawler',
     ];
 }
@@ -100,18 +97,6 @@ function perf_parse_voku(string $html): void
     \voku\helper\HtmlDomParser::str_get_html($html);
 }
 
-function perf_parse_paquet(string $html): void
-{
-    $dom = new \PHPHtmlParser\Dom();
-    if (method_exists($dom, 'loadStr')) {
-        $dom->loadStr($html);
-        return;
-    }
-    if (method_exists($dom, 'load')) {
-        $dom->load($html);
-    }
-}
-
 /** @return array{items:int,seconds:float,avg_ms:float,peak_bytes:?int} */
 function run_perf(string $parser, array $fixtures, int $iterations, bool $measure_mem): array
 {
@@ -134,8 +119,6 @@ function run_perf(string $parser, array $fixtures, int $iterations, bool $measur
                 perf_parse_domcrawler($html);
             } elseif ($parser === 'voku/simple_html_dom') {
                 perf_parse_voku($html);
-            } elseif ($parser === 'paquettg/php-html-parser') {
-                perf_parse_paquet($html);
             }
         }
     }

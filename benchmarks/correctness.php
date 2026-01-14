@@ -23,8 +23,6 @@ function parser_available(string $name): bool
             return class_exists('Symfony\\Component\\DomCrawler\\Crawler');
         case 'voku/simple_html_dom':
             return class_exists('voku\\helper\\HtmlDomParser');
-        case 'paquettg/php-html-parser':
-            return class_exists('PHPHtmlParser\\Dom');
         default:
             return false;
     }
@@ -174,30 +172,6 @@ function parse_with_voku(string $html, ?FragmentContext $fragment_context): stri
     throw new RuntimeException('voku/simple_html_dom adapter could not access a DOM document');
 }
 
-function parse_with_paquet(string $html, ?FragmentContext $fragment_context): string
-{
-    $dom = new \PHPHtmlParser\Dom();
-    if (method_exists($dom, 'loadStr')) {
-        $dom->loadStr($html);
-    } elseif (method_exists($dom, 'load')) {
-        $dom->load($html);
-    }
-
-    if (method_exists($dom, 'getDocument')) {
-        $doc = $dom->getDocument();
-        if ($doc instanceof \DOMDocument) {
-            return DomTestSerializer::toTestFormat($doc);
-        }
-        if ($doc instanceof \DOMNode) {
-            return DomTestSerializer::toTestFormat($doc);
-        }
-    }
-    if (property_exists($dom, 'root') && $dom->root instanceof \DOMNode) {
-        return DomTestSerializer::toTestFormat($dom->root);
-    }
-    throw new RuntimeException('paquettg/php-html-parser adapter could not access a DOM document');
-}
-
 function parser_list(): array
 {
     return [
@@ -206,7 +180,6 @@ function parser_list(): array
         'dom/html-document',
         'masterminds/html5',
         'voku/simple_html_dom',
-        'paquettg/php-html-parser',
         'symfony/dom-crawler',
     ];
 }
@@ -246,8 +219,6 @@ function run_correctness(string $parser_name, string $dir, ?int $limit = null): 
                     $actual = parse_with_domcrawler($test['data'], $test['fragment_context']);
                 } elseif ($parser_name === 'voku/simple_html_dom') {
                     $actual = parse_with_voku($test['data'], $test['fragment_context']);
-                } elseif ($parser_name === 'paquettg/php-html-parser') {
-                    $actual = parse_with_paquet($test['data'], $test['fragment_context']);
                 } else {
                     throw new RuntimeException('Unknown parser: ' . $parser_name);
                 }
