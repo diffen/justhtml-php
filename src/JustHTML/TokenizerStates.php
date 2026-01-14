@@ -1737,36 +1737,28 @@ trait TokenizerStates
                 $pos = $this->pos;
             }
 
-            $ltIndex = strpos($buffer, '<', $pos);
-            $ampIndex = strpos($buffer, '&', $pos);
-            $nullIndex = strpos($buffer, "\0", $pos);
-
-            $nextSpecial = $length;
-            if ($ltIndex !== false) {
-                $nextSpecial = $ltIndex;
-            }
-            if ($ampIndex !== false && $ampIndex < $nextSpecial) {
-                $nextSpecial = $ampIndex;
-            }
-            if ($nullIndex !== false && $nullIndex < $nextSpecial) {
-                $nextSpecial = $nullIndex;
-            }
-
-            if ($nextSpecial > $pos) {
-                $chunk = substr($buffer, $pos, $nextSpecial - $pos);
-                $chunkLen = strlen($chunk);
-                $this->appendTextChunk($chunk, $chunkLen > 0 && $chunk[$chunkLen - 1] === "\r");
-                $pos = $nextSpecial;
-                $this->pos = $pos;
-            }
-
             if ($pos >= $length) {
                 $this->flushText();
                 $this->emitToken(new EOFToken());
                 return true;
             }
 
-            if ($nullIndex !== false && $nullIndex === $pos) {
+            $runLen = strcspn($buffer, "<&\0", $pos);
+            if ($runLen > 0) {
+                $chunk = substr($buffer, $pos, $runLen);
+                $chunkLen = strlen($chunk);
+                $this->appendTextChunk($chunk, $chunkLen > 0 && $chunk[$chunkLen - 1] === "\r");
+                $pos += $runLen;
+                $this->pos = $pos;
+                if ($pos >= $length) {
+                    $this->flushText();
+                    $this->emitToken(new EOFToken());
+                    return true;
+                }
+            }
+
+            $c = $buffer[$pos];
+            if ($c === "\0") {
                 $this->ignoreLf = false;
                 $this->emitError('unexpected-null-character');
                 $this->appendText("\u{FFFD}");
@@ -1774,7 +1766,7 @@ trait TokenizerStates
                 $this->pos = $pos;
                 continue;
             }
-            if ($ampIndex !== false && $ampIndex === $pos) {
+            if ($c === '&') {
                 $this->appendText('&');
                 $pos += 1;
                 $this->pos = $pos;
@@ -1908,41 +1900,37 @@ trait TokenizerStates
                 $this->pos -= 1;
                 $pos = $this->pos;
             }
-
-            $ltIndex = strpos($buffer, '<', $pos);
-            $nullIndex = strpos($buffer, "\0", $pos);
-            $nextSpecial = $ltIndex !== false ? $ltIndex : $length;
-            if ($nullIndex !== false && $nullIndex < $nextSpecial) {
-                if ($nullIndex > $pos) {
-                    $chunk = substr($buffer, $pos, $nullIndex - $pos);
-                    $chunkLen = strlen($chunk);
-                    $this->appendTextChunk($chunk, $chunkLen > 0 && $chunk[$chunkLen - 1] === "\r");
-                } else {
-                    $this->ignoreLf = false;
-                }
-                $this->emitError('unexpected-null-character');
-                $this->appendText("\u{FFFD}");
-                $pos = $nullIndex + 1;
-                $this->pos = $pos;
-                continue;
-            }
-            if ($ltIndex === false) {
-                if ($pos < $length) {
-                    $chunk = substr($buffer, $pos);
-                    $chunkLen = strlen($chunk);
-                    $this->appendTextChunk($chunk, $chunkLen > 0 && $chunk[$chunkLen - 1] === "\r");
-                }
-                $this->pos = $length;
+            if ($pos >= $length) {
                 $this->flushText();
                 $this->emitToken(new EOFToken());
                 return true;
             }
-            if ($ltIndex > $pos) {
-                $chunk = substr($buffer, $pos, $ltIndex - $pos);
+
+            $runLen = strcspn($buffer, "<\0", $pos);
+            if ($runLen > 0) {
+                $chunk = substr($buffer, $pos, $runLen);
                 $chunkLen = strlen($chunk);
                 $this->appendTextChunk($chunk, $chunkLen > 0 && $chunk[$chunkLen - 1] === "\r");
+                $pos += $runLen;
+                $this->pos = $pos;
+                if ($pos >= $length) {
+                    $this->flushText();
+                    $this->emitToken(new EOFToken());
+                    return true;
+                }
             }
-            $pos = $ltIndex + 1;
+
+            $c = $buffer[$pos];
+            if ($c === "\0") {
+                $this->ignoreLf = false;
+                $this->emitError('unexpected-null-character');
+                $this->appendText("\u{FFFD}");
+                $pos += 1;
+                $this->pos = $pos;
+                continue;
+            }
+
+            $pos += 1;
             $this->pos = $pos;
 
             if ($this->rawtextTagName === 'script') {
