@@ -1809,7 +1809,11 @@ trait TokenizerStates
         if ($c !== null) {
             $ord = ord($c);
             if (($ord >= 0x41 && $ord <= 0x5A) || ($ord >= 0x61 && $ord <= 0x7A)) {
-                $this->currentTagName .= strtolower($c);
+                $lower = $c;
+                if ($ord >= 0x41 && $ord <= 0x5A) {
+                    $lower = chr($ord + 32);
+                }
+                $this->currentTagName .= $lower;
                 $this->originalTagName .= $c;
                 $this->state = self::RCDATA_END_TAG_NAME;
                 return false;
@@ -1829,7 +1833,11 @@ trait TokenizerStates
             if ($c !== null) {
                 $ord = ord($c);
                 if (($ord >= 0x41 && $ord <= 0x5A) || ($ord >= 0x61 && $ord <= 0x7A)) {
-                    $this->currentTagName .= strtolower($c);
+                    $lower = $c;
+                    if ($ord >= 0x41 && $ord <= 0x5A) {
+                        $lower = chr($ord + 32);
+                    }
+                    $this->currentTagName .= $lower;
                     $this->originalTagName .= $c;
                     continue;
                 }
@@ -1980,7 +1988,11 @@ trait TokenizerStates
         if ($c !== null) {
             $ord = ord($c);
             if (($ord >= 0x41 && $ord <= 0x5A) || ($ord >= 0x61 && $ord <= 0x7A)) {
-                $this->currentTagName .= strtolower($c);
+                $lower = $c;
+                if ($ord >= 0x41 && $ord <= 0x5A) {
+                    $lower = chr($ord + 32);
+                }
+                $this->currentTagName .= $lower;
                 $this->originalTagName .= $c;
                 $this->state = self::RAWTEXT_END_TAG_NAME;
                 return false;
@@ -2000,7 +2012,11 @@ trait TokenizerStates
             if ($c !== null) {
                 $ord = ord($c);
                 if (($ord >= 0x41 && $ord <= 0x5A) || ($ord >= 0x61 && $ord <= 0x7A)) {
-                    $this->currentTagName .= strtolower($c);
+                    $lower = $c;
+                    if ($ord >= 0x41 && $ord <= 0x5A) {
+                        $lower = chr($ord + 32);
+                    }
+                    $this->currentTagName .= $lower;
                     $this->originalTagName .= $c;
                     continue;
                 }
@@ -2208,7 +2224,11 @@ trait TokenizerStates
         if ($c !== null) {
             $ord = ord($c);
             if (($ord >= 0x41 && $ord <= 0x5A) || ($ord >= 0x61 && $ord <= 0x7A)) {
-                $this->currentTagName .= strtolower($c);
+                $lower = $c;
+                if ($ord >= 0x41 && $ord <= 0x5A) {
+                    $lower = chr($ord + 32);
+                }
+                $this->currentTagName .= $lower;
                 $this->originalTagName .= $c;
                 $this->tempBuffer .= $c;
                 return false;
