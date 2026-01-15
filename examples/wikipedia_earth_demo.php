@@ -53,7 +53,7 @@ function truncate(string $text, int $limit = 200): string
 }
 
 $heading = $doc->query('#firstHeading')[0] ?? null;
-$lead = $doc->query('#mw-content-text p')[0] ?? null;
+$lead = $doc->query('#mw-content-text p:not(:empty)')[0] ?? null;
 $infobox = $doc->query('table.infobox')[0] ?? null;
 $firstLink = $lead ? ($lead->query('a')[0] ?? null) : null;
 

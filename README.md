@@ -124,6 +124,36 @@ foreach (Stream::stream($html) as [$event, $data]) {
 php bin/justhtml page.html --selector "main p" --format text
 ```
 
+Full usage:
+
+```text
+Usage: justhtml [options] <path|->
+
+Options:
+  --selector <css>   CSS selector (defaults to document root)
+  --format <fmt>     html, text, or markdown (default: html)
+  --first            Only output first matching node
+  --separator <s>    Text-only: join string between text nodes (default: single space)
+  --strip            Text-only: strip each text node and drop empty segments (default)
+  --no-strip         Text-only: preserve text node whitespace
+  --version          Print version information
+  -h, --help         Show this help
+```
+
+More examples:
+
+```sh
+# Extract the first non-empty paragraph from the Wikipedia Earth fixture.
+php bin/justhtml examples/fixtures/wikipedia-earth.html \
+  --selector '#mw-content-text p:not(:empty)' --format text --first
+
+# Stream HTML via stdin and extract markdown from an article.
+curl -s https://example.com | php bin/justhtml - --selector "article" --format markdown
+
+# Preserve whitespace when extracting text.
+php bin/justhtml page.html --selector "pre" --format text --no-strip --separator ""
+```
+
 ## Comparison to other parsers
 
 Compliance results are based on the html5lib tree-construction tests. Performance
