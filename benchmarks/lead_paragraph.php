@@ -32,8 +32,8 @@ function lead_parser_list(): array
     return [
         'justhtml',
         'justhtml/stream',
-        'domdocument',
         'dom/html-document',
+        'domdocument',
         'masterminds/html5',
         'voku/simple_html_dom',
         'symfony/dom-crawler',
@@ -299,8 +299,8 @@ function bench_parser(string $parser, string $html, int $iterations): array
 
 function render_markdown(array $results): void
 {
-    echo "| Parser | Avg ms/lead | Total s | Items | Match |\n";
-    echo "|--------|------------:|--------:|------:|:------|\n";
+    echo "| Parser | Average time (milliseconds) | Total time (seconds) | Iterations | Test matches with justhtml baseline? |\n";
+    echo "|--------|----------------------------:|---------------------:|-----------:|:------------------------------------|\n";
     foreach ($results as $name => $data) {
         if (isset($data['note'])) {
             echo '| ' . $name . ' | - | - | - | ' . $data['note'] . " |\n";

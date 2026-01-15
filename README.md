@@ -225,17 +225,17 @@ from `examples/fixtures/wikipedia-earth.html`:
 php benchmarks/lead_paragraph.php --iterations 5 --markdown
 ```
 
-Example results (PHP 8.5.1, 5-run average; all outputs match the JustHTML baseline):
+Example results (PHP 8.4.16, 5-run average; all outputs match the JustHTML baseline):
 
-| Parser | Average time (milliseconds) |
-|--------|----------------------------:|
-| **JustHTML** | 120 |
-| **JustHTML (stream)** | 13 |
-| DOM\HTMLDocument | 15 |
-| DOMDocument (libxml) | 19 |
-| masterminds/html5 | 78 |
-| voku/simple_html_dom | 263 |
-| symfony/dom-crawler | 99 |
+| Parser | Average time (milliseconds) | Total time (seconds) | Iterations |
+|--------|----------------------------:|---------------------:|-----------:|
+| **JustHTML** | 98.72 | 0.49 | 5 |
+| **JustHTML (stream)** | 11.44 | 0.06 | 5 |
+| DOM\HTMLDocument | 12.21 | 0.06 | 5 |
+| DOMDocument (libxml) | 15.97 | 0.08 | 5 |
+| masterminds/html5 | 74.73 | 0.37 | 5 |
+| voku/simple_html_dom | 353.01 | 1.77 | 5 |
+| symfony/dom-crawler | 73.05 | 0.37 | 5 |
 
 ## Tests
 
