@@ -77,16 +77,6 @@ Intro
 /a
 ```
 
-## Detailed example (Wikipedia Earth)
-
-```sh
-php examples/wikipedia_earth_demo.php
-```
-
-The script loads `examples/fixtures/wikipedia-earth.html` and prints a
-walkthrough of selectors, attributes, classes, inner/outer HTML, text, and
-Markdown extraction.
-
 ## CSS selectors
 
 Input HTML:
@@ -118,6 +108,16 @@ $markdown = $doc->toMarkdown();
 
 Note: `toMarkdown()` is a convenience helper (best-effort conversion) and not
 part of the HTML specification.
+
+## Detailed example (Wikipedia Earth)
+
+```sh
+php examples/wikipedia_earth_demo.php
+```
+
+The script loads `examples/fixtures/wikipedia-earth.html` and prints a
+walkthrough of selectors, attributes, classes, inner/outer HTML, text, and
+Markdown extraction.
 
 ## Streaming
 
