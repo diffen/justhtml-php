@@ -89,11 +89,17 @@ Markdown extraction.
 
 ## CSS selectors
 
+Input HTML:
+
+```html
+<main><p>Hello</p></main>
+```
+
 ```php
-$nodes = $doc->query('main p'); // Returns an array of nodes
+$nodes = $doc->query('main p'); // CSS selector query; returns matching nodes
 echo $nodes[0]->toText() . "\n";
-echo ($nodes[0]->matches('main > p') ? 'true' : 'false') . "\n";
-echo ($nodes[0]->matches('article p') ? 'true' : 'false') . "\n";
+echo ($nodes[0]->matches('main > p') ? 'true' : 'false') . "\n"; // CSS selector match on this node
+echo ($nodes[0]->matches('article p') ? 'true' : 'false') . "\n"; // true/false based on selector match
 ```
 
 Expected output:
