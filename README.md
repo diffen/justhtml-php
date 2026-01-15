@@ -200,7 +200,7 @@ to regenerate.
 
 See `benchmarks/README.md` for parser install instructions and details.
 
-## Lead paragraph benchmark (Wikipedia)
+## Lead paragraph extraction benchmark
 
 Measures parse + extract of the first non-empty paragraph under `#mw-content-text`
 from `examples/fixtures/wikipedia-earth.html`:
@@ -209,17 +209,17 @@ from `examples/fixtures/wikipedia-earth.html`:
 php benchmarks/lead_paragraph.php --iterations 5 --markdown
 ```
 
-Example results (PHP 8.5.1, 5-run average, all outputs match the JustHTML baseline):
+Example results (PHP 8.5.1, 5-run average; all outputs match the JustHTML baseline):
 
-| Parser | Avg ms/lead | Total s | Items | Match |
-|--------|------------:|--------:|------:|:------|
-| justhtml | 120.06 | 0.60 | 5 | yes |
-| justhtml/stream | 13.09 | 0.07 | 5 | yes |
-| domdocument | 19.05 | 0.10 | 5 | yes |
-| dom/html-document | 15.36 | 0.08 | 5 | yes |
-| masterminds/html5 | 77.86 | 0.39 | 5 | yes |
-| voku/simple_html_dom | 263.35 | 1.32 | 5 | yes |
-| symfony/dom-crawler | 99.02 | 0.50 | 5 | yes |
+| Parser | Avg ms/lead | Total s |
+|--------|------------:|--------:|
+| **JustHTML** | 120.1 | 0.60 |
+| **JustHTML (stream)** | 13.1 | 0.07 |
+| DOM\HTMLDocument | 15.4 | 0.08 |
+| DOMDocument (libxml) | 19.1 | 0.10 |
+| masterminds/html5 | 77.9 | 0.39 |
+| voku/simple_html_dom | 263.4 | 1.32 |
+| symfony/dom-crawler | 99.0 | 0.50 |
 
 ## Tests
 
