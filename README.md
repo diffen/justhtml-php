@@ -211,15 +211,15 @@ php benchmarks/lead_paragraph.php --iterations 5 --markdown
 
 Example results (PHP 8.5.1, 5-run average; all outputs match the JustHTML baseline):
 
-| Parser | Avg ms/lead | Total s |
-|--------|------------:|--------:|
-| **JustHTML** | 120.1 | 0.60 |
-| **JustHTML (stream)** | 13.1 | 0.07 |
-| DOM\HTMLDocument | 15.4 | 0.08 |
-| DOMDocument (libxml) | 19.1 | 0.10 |
-| masterminds/html5 | 77.9 | 0.39 |
-| voku/simple_html_dom | 263.4 | 1.32 |
-| symfony/dom-crawler | 99.0 | 0.50 |
+| Parser | Average time (milliseconds) |
+|--------|----------------------------:|
+| **JustHTML** | 120 |
+| **JustHTML (stream)** | 13 |
+| DOM\HTMLDocument | 15 |
+| DOMDocument (libxml) | 19 |
+| masterminds/html5 | 78 |
+| voku/simple_html_dom | 263 |
+| symfony/dom-crawler | 99 |
 
 ## Tests
 
