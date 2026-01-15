@@ -124,6 +124,8 @@ foreach (Stream::stream($html) as [$event, $data]) {
 php bin/justhtml page.html --selector "main p" --format text
 ```
 
+For more detailed examples, see [CLI.md](CLI.md).
+
 Full usage:
 
 ```text
