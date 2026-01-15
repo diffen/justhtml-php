@@ -1033,9 +1033,23 @@ final class Selector
     public static function query($root, string $selector): array
     {
         $parsed = self::parseSelector($selector);
+        $fast = self::fastQuery($root, $parsed);
+        if ($fast !== null) {
+            return $fast;
+        }
         $results = [];
         self::queryDescendants($root, $parsed, $results);
         return $results;
+    }
+
+    public static function queryFirst($root, string $selector)
+    {
+        $parsed = self::parseSelector($selector);
+        $fast = self::fastQueryFirst($root, $parsed);
+        if ($fast !== null) {
+            return $fast;
+        }
+        return self::queryFirstDescendant($root, $parsed);
     }
 
     public static function matches($node, string $selector): bool
@@ -1050,6 +1064,259 @@ final class Selector
             self::$matcher = new SelectorMatcher();
         }
         return self::$matcher;
+    }
+
+    private static function fastQuery($root, $selector): ?array
+    {
+        if ($selector instanceof SelectorComplex) {
+            $parts = $selector->parts;
+            if (count($parts) === 1) {
+                $compound = $parts[0][1];
+                $id = self::compoundIdOnly($compound);
+                if ($id !== null) {
+                    $results = [];
+                    self::queryDescendantsById($root, $id, $results);
+                    return $results;
+                }
+                $tag = self::compoundTagOnly($compound);
+                if ($tag !== null) {
+                    $results = [];
+                    self::queryDescendantsByTag($root, $tag, $results);
+                    return $results;
+                }
+            }
+            if (count($parts) === 2 && $parts[1][0] === ' ') {
+                $id = self::compoundIdOnly($parts[0][1]);
+                $tag = self::compoundTagOnly($parts[1][1]);
+                if ($id !== null && $tag !== null) {
+                    $results = [];
+                    self::queryDescendantsByIdTag($root, $id, $tag, $results, false, false);
+                    return $results;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static function fastQueryFirst($root, $selector)
+    {
+        if ($selector instanceof SelectorComplex) {
+            $parts = $selector->parts;
+            if (count($parts) === 1) {
+                $compound = $parts[0][1];
+                $id = self::compoundIdOnly($compound);
+                if ($id !== null) {
+                    return self::queryFirstDescendantById($root, $id);
+                }
+                $tag = self::compoundTagOnly($compound);
+                if ($tag !== null) {
+                    return self::queryFirstDescendantByTag($root, $tag);
+                }
+            }
+            if (count($parts) === 2 && $parts[1][0] === ' ') {
+                $id = self::compoundIdOnly($parts[0][1]);
+                $tag = self::compoundTagOnly($parts[1][1]);
+                if ($id !== null && $tag !== null) {
+                    return self::queryFirstDescendantByIdTag($root, $id, $tag, false, false);
+                }
+            }
+        }
+        return null;
+    }
+
+    private static function compoundIdOnly(SelectorCompound $compound): ?string
+    {
+        if (count($compound->selectors) !== 1) {
+            return null;
+        }
+        $simple = $compound->selectors[0];
+        if ($simple->type !== SelectorSimple::TYPE_ID || $simple->name === null) {
+            return null;
+        }
+        return $simple->name;
+    }
+
+    private static function compoundTagOnly(SelectorCompound $compound): ?string
+    {
+        if (count($compound->selectors) !== 1) {
+            return null;
+        }
+        $simple = $compound->selectors[0];
+        if ($simple->type !== SelectorSimple::TYPE_TAG || $simple->name === null) {
+            return null;
+        }
+        return strtolower($simple->name);
+    }
+
+    private static function queryDescendantsById($node, string $id, array &$results): void
+    {
+        if ($node->hasChildNodes()) {
+            foreach ($node->children as $child) {
+                if (property_exists($child, 'name') && !(isset($child->name[0]) && $child->name[0] === '#')) {
+                    $attrs = $child->attrs ?? [];
+                    if (($attrs['id'] ?? '') === $id) {
+                        $results[] = $child;
+                    }
+                }
+                self::queryDescendantsById($child, $id, $results);
+            }
+        }
+
+        if ($node instanceof ElementNode && $node->templateContent !== null) {
+            self::queryDescendantsById($node->templateContent, $id, $results);
+        }
+    }
+
+    private static function queryFirstDescendantById($node, string $id)
+    {
+        if ($node->hasChildNodes()) {
+            foreach ($node->children as $child) {
+                if (property_exists($child, 'name') && !(isset($child->name[0]) && $child->name[0] === '#')) {
+                    $attrs = $child->attrs ?? [];
+                    if (($attrs['id'] ?? '') === $id) {
+                        return $child;
+                    }
+                }
+                $found = self::queryFirstDescendantById($child, $id);
+                if ($found !== null) {
+                    return $found;
+                }
+            }
+        }
+
+        if ($node instanceof ElementNode && $node->templateContent !== null) {
+            return self::queryFirstDescendantById($node->templateContent, $id);
+        }
+
+        return null;
+    }
+
+    private static function queryDescendantsByTag($node, string $tag, array &$results): void
+    {
+        if ($node->hasChildNodes()) {
+            foreach ($node->children as $child) {
+                if (property_exists($child, 'name') && !(isset($child->name[0]) && $child->name[0] === '#')) {
+                    if (strtolower((string)$child->name) === $tag) {
+                        $results[] = $child;
+                    }
+                }
+                self::queryDescendantsByTag($child, $tag, $results);
+            }
+        }
+
+        if ($node instanceof ElementNode && $node->templateContent !== null) {
+            self::queryDescendantsByTag($node->templateContent, $tag, $results);
+        }
+    }
+
+    private static function queryFirstDescendantByTag($node, string $tag)
+    {
+        if ($node->hasChildNodes()) {
+            foreach ($node->children as $child) {
+                if (property_exists($child, 'name') && !(isset($child->name[0]) && $child->name[0] === '#')) {
+                    if (strtolower((string)$child->name) === $tag) {
+                        return $child;
+                    }
+                }
+                $found = self::queryFirstDescendantByTag($child, $tag);
+                if ($found !== null) {
+                    return $found;
+                }
+            }
+        }
+
+        if ($node instanceof ElementNode && $node->templateContent !== null) {
+            return self::queryFirstDescendantByTag($node->templateContent, $tag);
+        }
+
+        return null;
+    }
+
+    private static function queryDescendantsByIdTag(
+        $node,
+        string $id,
+        string $tag,
+        array &$results,
+        bool $insideId,
+        bool $matchSelf
+    ): void {
+        $hasId = false;
+        if (property_exists($node, 'name') && !(isset($node->name[0]) && $node->name[0] === '#')) {
+            $attrs = $node->attrs ?? [];
+            $hasId = ($attrs['id'] ?? '') === $id;
+            if ($matchSelf && $insideId && strtolower((string)$node->name) === $tag) {
+                $results[] = $node;
+            }
+        }
+
+        $nextInside = $insideId || $hasId;
+
+        if ($node->hasChildNodes()) {
+            foreach ($node->children as $child) {
+                self::queryDescendantsByIdTag($child, $id, $tag, $results, $nextInside, true);
+            }
+        }
+
+        if ($node instanceof ElementNode && $node->templateContent !== null) {
+            self::queryDescendantsByIdTag($node->templateContent, $id, $tag, $results, $nextInside, true);
+        }
+    }
+
+    private static function queryFirstDescendantByIdTag(
+        $node,
+        string $id,
+        string $tag,
+        bool $insideId,
+        bool $matchSelf
+    ) {
+        $hasId = false;
+        if (property_exists($node, 'name') && !(isset($node->name[0]) && $node->name[0] === '#')) {
+            $attrs = $node->attrs ?? [];
+            $hasId = ($attrs['id'] ?? '') === $id;
+            if ($matchSelf && $insideId && strtolower((string)$node->name) === $tag) {
+                return $node;
+            }
+        }
+
+        $nextInside = $insideId || $hasId;
+
+        if ($node->hasChildNodes()) {
+            foreach ($node->children as $child) {
+                $found = self::queryFirstDescendantByIdTag($child, $id, $tag, $nextInside, true);
+                if ($found !== null) {
+                    return $found;
+                }
+            }
+        }
+
+        if ($node instanceof ElementNode && $node->templateContent !== null) {
+            return self::queryFirstDescendantByIdTag($node->templateContent, $id, $tag, $nextInside, true);
+        }
+
+        return null;
+    }
+
+    private static function queryFirstDescendant($node, $selector)
+    {
+        if ($node->hasChildNodes()) {
+            foreach ($node->children as $child) {
+                if (property_exists($child, 'name') && !(isset($child->name[0]) && $child->name[0] === '#')) {
+                    if (self::matcher()->matches($child, $selector)) {
+                        return $child;
+                    }
+                }
+                $found = self::queryFirstDescendant($child, $selector);
+                if ($found !== null) {
+                    return $found;
+                }
+            }
+        }
+
+        if ($node instanceof ElementNode && $node->templateContent !== null) {
+            return self::queryFirstDescendant($node->templateContent, $selector);
+        }
+
+        return null;
     }
 
     private static function queryDescendants($node, $selector, array &$results): void

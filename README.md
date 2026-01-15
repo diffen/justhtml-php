@@ -24,7 +24,7 @@ doesn't meet your needs.
 
 ### 3. Query and output utilities
 
-- CSS selectors via `query()` and `matches()`.
+- CSS selectors via `query()`, `queryFirst()`, and `matches()`.
 - HTML, text, and Markdown output helpers for common workflows.
 
 ### 4. Event streaming
@@ -35,7 +35,7 @@ doesn't meet your needs.
 
 - HTML5-compliant parsing with html5lib test coverage
 - DOM-like tree with HTML serialization and text extraction
-- CSS selectors with `query()` and `matches()`
+- CSS selectors with `query()`, `queryFirst()`, and `matches()`
 - Markdown conversion via `toMarkdown()`
 - Streaming tokenizer API
 - Fragment parsing and strict error mode
@@ -91,6 +91,7 @@ Input HTML:
 
 ```php
 $nodes = $doc->query('main p'); // CSS selector query; returns matching nodes
+$first = $doc->queryFirst('main p'); // First match or null
 echo $nodes[0]->toText() . "\n";
 echo ($nodes[0]->matches('main > p') ? 'true' : 'false') . "\n"; // CSS selector match on this node
 echo ($nodes[0]->matches('article p') ? 'true' : 'false') . "\n"; // true/false based on selector match

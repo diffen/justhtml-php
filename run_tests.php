@@ -27,6 +27,7 @@ $required = [
     'Tokens.php',
     'FragmentContext.php',
     'Node.php',
+    'Selector.php',
     'Serialize.php',
     'TreeBuilderUtils.php',
     'TreeBuilderModes.php',
@@ -1203,21 +1204,113 @@ function run_encoding_tests(string $dir): array
     return [$passed, $total, $skipped];
 }
 
+function run_selector_tests(bool $show_failures = false, int $max_failures = 0): array
+{
+    $tests = [
+        [
+            'name' => 'queryFirst id + tag',
+            'run' => static function (): bool {
+                $html = '<div id="mw-content-text"><p>First</p><section><p>Second</p></section></div>'
+                    . '<p>Outside</p>';
+                $doc = new JustHTML($html);
+
+                $first = $doc->queryFirst('#mw-content-text p');
+                if ($first === null || $first->toText() !== 'First') {
+                    return false;
+                }
+
+                $nodes = $doc->query('#mw-content-text p');
+                if (count($nodes) !== 2) {
+                    return false;
+                }
+                if ($nodes[0]->toText() !== 'First' || $nodes[1]->toText() !== 'Second') {
+                    return false;
+                }
+
+                return true;
+            },
+        ],
+        [
+            'name' => 'queryFirst id only',
+            'run' => static function (): bool {
+                $html = '<div id="mw-content-text"><p>First</p></div><p>Outside</p>';
+                $doc = new JustHTML($html);
+
+                $node = $doc->queryFirst('#mw-content-text');
+                if ($node === null) {
+                    return false;
+                }
+                return $node->name === 'div';
+            },
+        ],
+        [
+            'name' => 'queryFirst tag only',
+            'run' => static function (): bool {
+                $html = '<div id="mw-content-text"><p>First</p></div><p>Outside</p>';
+                $doc = new JustHTML($html);
+
+                $node = $doc->queryFirst('p');
+                return $node !== null && $node->toText() === 'First';
+            },
+        ],
+        [
+            'name' => 'queryFirst missing selector',
+            'run' => static function (): bool {
+                $doc = new JustHTML('<div></div>');
+                return $doc->queryFirst('#missing') === null;
+            },
+        ],
+    ];
+
+    $passed = 0;
+    $failed = 0;
+
+    foreach ($tests as $test) {
+        $ok = false;
+        try {
+            $ok = (bool)$test['run']();
+        } catch (\Throwable $e) {
+            $ok = false;
+            if ($show_failures) {
+                echo "Selector test failed: {$test['name']} ({$e->getMessage()})\n";
+            }
+        }
+
+        if ($ok) {
+            $passed += 1;
+            continue;
+        }
+
+        $failed += 1;
+        if ($show_failures) {
+            echo "Selector test failed: {$test['name']}\n";
+        }
+        if ($max_failures > 0 && $failed >= $max_failures) {
+            break;
+        }
+    }
+
+    return [$passed, $passed + $failed];
+}
+
 function run_all(bool $show_failures = false, int $max_failures = 0): void
 {
     [$tree_passed, $tree_failed, $tree_skipped] = run_tree_tests(__DIR__ . '/html5lib-tests/tree-construction', $show_failures, $max_failures);
     [$tok_passed, $tok_total] = run_tokenizer_tests(__DIR__ . '/html5lib-tests/tokenizer', $show_failures, $max_failures);
     [$ser_passed, $ser_total, $ser_skipped] = run_serializer_tests(__DIR__ . '/html5lib-tests/serializer');
     [$enc_passed, $enc_total, $enc_skipped] = run_encoding_tests(__DIR__ . '/html5lib-tests/encoding');
+    [$sel_passed, $sel_total] = run_selector_tests($show_failures, $max_failures);
 
-    $total_passed = $tree_passed + $tok_passed + $ser_passed + $enc_passed;
-    $total_failed = $tree_failed + ($tok_total - $tok_passed) + ($ser_total - $ser_passed - $ser_skipped) + ($enc_total - $enc_passed - $enc_skipped);
+    $total_passed = $tree_passed + $tok_passed + $ser_passed + $enc_passed + $sel_passed;
+    $total_failed = $tree_failed + ($tok_total - $tok_passed) + ($ser_total - $ser_passed - $ser_skipped)
+        + ($enc_total - $enc_passed - $enc_skipped) + ($sel_total - $sel_passed);
     $total_skipped = $tree_skipped + $ser_skipped + $enc_skipped;
 
     echo "Tree tests: {$tree_passed} passed, {$tree_failed} failed, {$tree_skipped} skipped\n";
     echo "Tokenizer tests: {$tok_passed} passed, " . ($tok_total - $tok_passed) . " failed\n";
     echo "Serializer tests: {$ser_passed} passed, " . ($ser_total - $ser_passed - $ser_skipped) . " failed, {$ser_skipped} skipped\n";
     echo "Encoding tests: {$enc_passed} passed, " . ($enc_total - $enc_passed - $enc_skipped) . " failed, {$enc_skipped} skipped\n";
+    echo "Selector tests: {$sel_passed} passed, " . ($sel_total - $sel_passed) . " failed\n";
     echo "Total: {$total_passed} passed, {$total_failed} failed, {$total_skipped} skipped\n";
 }
 
@@ -1235,8 +1328,9 @@ $run_tree = in_array('--tree', $args, true);
 $run_tokenizer = in_array('--tokenizer', $args, true);
 $run_serializer = in_array('--serializer', $args, true);
 $run_encoding = in_array('--encoding', $args, true);
+$run_selector = in_array('--selector', $args, true);
 
-if ($run_tree || $run_tokenizer || $run_serializer || $run_encoding) {
+if ($run_tree || $run_tokenizer || $run_serializer || $run_encoding || $run_selector) {
     if ($run_tree) {
         [$tree_passed, $tree_failed, $tree_skipped] = run_tree_tests(__DIR__ . '/html5lib-tests/tree-construction', $show_failures, $max_failures);
         echo "Tree tests: {$tree_passed} passed, {$tree_failed} failed, {$tree_skipped} skipped\n";
@@ -1252,6 +1346,10 @@ if ($run_tree || $run_tokenizer || $run_serializer || $run_encoding) {
     if ($run_encoding) {
         [$enc_passed, $enc_total, $enc_skipped] = run_encoding_tests(__DIR__ . '/html5lib-tests/encoding');
         echo "Encoding tests: {$enc_passed} passed, " . ($enc_total - $enc_passed - $enc_skipped) . " failed, {$enc_skipped} skipped\n";
+    }
+    if ($run_selector) {
+        [$sel_passed, $sel_total] = run_selector_tests($show_failures, $max_failures);
+        echo "Selector tests: {$sel_passed} passed, " . ($sel_total - $sel_passed) . " failed\n";
     }
 } else {
     run_all($show_failures, $max_failures);

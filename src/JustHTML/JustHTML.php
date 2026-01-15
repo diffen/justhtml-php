@@ -102,6 +102,11 @@ final class JustHTML
         return $this->root->query($selector);
     }
 
+    public function queryFirst(string $selector)
+    {
+        return $this->root->queryFirst($selector);
+    }
+
     public function toTestFormat(): string
     {
         return $this->root->toTestFormat(0);

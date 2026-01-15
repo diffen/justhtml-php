@@ -144,6 +144,11 @@ class SimpleDomNode
         return Selector::query($this, $selector);
     }
 
+    public function queryFirst(string $selector)
+    {
+        return Selector::queryFirst($this, $selector);
+    }
+
     public function matches(string $selector): bool
     {
         return Selector::matches($this, $selector);
