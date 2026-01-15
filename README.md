@@ -170,7 +170,7 @@ to regenerate.
 | Parser | Spec compliance (html5lib-tests pass rate) | Speed: Avg ms/doc (lower is better) | Selectors | Notes |
 |--------|---------------------------------------------|------------------------------------:|-----------|-------|
 | **JustHTML** | 1743/1743 (100%) | 7.3 | CSS | Full spec compliance |
-| DOM\HTMLDocument | 831/1743 (47.7%) | 0.8 | CSS | Native ext/dom HTML5 DOM (PHP 8.4+) |
+| DOM\HTMLDocument | 831/1743 (47.7%) | 0.8 | CSS | PHP built-in DOM extension (DOM\\HTMLDocument; HTML5 parser in PHP 8.4+, C implementation) |
 | DOMDocument (libxml) | 54/1743 (3.1%) | 1.2 | XPath | Legacy HTML parser (libxml2), not HTML5-correct |
 | masterminds/html5 | 75/1743 (4.3%) | 5.8 | XPath | HTML5 parser, low compliance |
 | voku/simple_html_dom | 29/1743 (1.7%) | 5.0 | CSS | Lenient DOM wrapper, low compliance |
