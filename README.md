@@ -30,7 +30,6 @@ doesn't meet your needs.
 ### 4. Event streaming
 
 - Streaming tokenizer events for low-memory, early-exit parsing.
-- None of the other parsers in the comparison table expose an HTML5 streaming API.
 
 ## Features
 
