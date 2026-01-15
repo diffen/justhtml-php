@@ -3,37 +3,7 @@
 PHP HTML5 parser ported from [Emil Stenström's JustHTML](https://github.com/EmilStenstrom/justhtml),
 targeting PHP 7.4+. Inspired by [Simon Willison's JavaScript port, justjshtml](https://github.com/simonw/justjshtml).
 It is built for correctness and passes the html5lib test suite (tree builder,
-tokenizer, serializer, and encoding tests). Scripted fixtures in the suite are
-intentionally skipped.
-
-## Requirements
-
-- PHP 7.4+
-
-## Installation
-
-```sh
-composer require diffen/justhtml
-```
-
-## Quickstart
-
-```php
-<?php
-
-require_once __DIR__ . '/vendor/autoload.php';
-
-use JustHTML\JustHTML;
-
-$doc = new JustHTML('<main><p>Hello</p></main>');
-echo $doc->toHtml(0, 2, false);
-```
-
-Expected output:
-
-```text
-<main><p>Hello</p></main>
-```
+tokenizer, serializer, and encoding tests).
 
 ## Why use JustHTML?
 
@@ -61,6 +31,47 @@ Expected output:
 - Streaming tokenizer API
 - Fragment parsing and strict error mode
 
+## Requirements
+
+- PHP 7.4+ (tested with 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5)
+
+## Installation
+
+```sh
+composer require diffen/justhtml
+```
+
+Non-Composer use: include `src/JustHTML/*.php` with your autoloader and keep `data/` alongside `src/`.
+
+## Quickstart
+
+```php
+<?php
+
+require_once __DIR__ . '/vendor/autoload.php';
+
+use JustHTML\JustHTML;
+
+$html = '<article><h1>Title</h1><p class="lead">Intro</p><a href="/a">Read</a></article>';
+$doc = new JustHTML($html);
+
+$title = $doc->query('h1')[0]->toText();
+$lead = $doc->query('p.lead')[0]->toText();
+$link = $doc->query('a')[0]->attrs['href'] ?? '';
+
+echo $title . "\n";
+echo $lead . "\n";
+echo $link . "\n";
+```
+
+Expected output:
+
+```text
+Title
+Intro
+/a
+```
+
 ## Detailed example (Wikipedia Earth)
 
 ```sh
@@ -86,29 +97,6 @@ Expected output:
 Hello
 true
 false
-```
-
-## Parsing and extraction
-
-```php
-$html = '<article><h1>Title</h1><p class="lead">Intro</p><a href="/a">Read</a></article>';
-$doc = new JustHTML($html);
-
-$title = $doc->query('h1')[0]->toText();
-$lead = $doc->query('p.lead')[0]->toText();
-$link = $doc->query('a')[0]->attrs['href'] ?? '';
-
-echo $title . "\n";
-echo $lead . "\n";
-echo $link . "\n";
-```
-
-Expected output:
-
-```text
-Title
-Intro
-/a
 ```
 
 ## Markdown
@@ -176,6 +164,5 @@ scripts/test-matrix-docker.sh
 ## Notes
 
 - This repo includes a copy of html5lib tests in `html5lib-tests`.
-- For non-Composer use, include `src/JustHTML/*.php` with your own autoloader.
 - Ported from Emil Stenström's JustHTML (Python) under the MIT License.
 - Inspired by Simon Willison's justjshtml port.
