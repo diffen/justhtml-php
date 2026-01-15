@@ -8,7 +8,7 @@ use JustHTML\JustHTML;
 use JustHTML\SimpleDomNode;
 
 // Fixture source: https://en.wikipedia.org/wiki/Earth (CC BY-SA 4.0).
-$fixture = __DIR__ . '/../benchmarks/fixtures/wikipedia-earth.html';
+$fixture = __DIR__ . '/fixtures/wikipedia-earth.html';
 $html = file_get_contents($fixture);
 if ($html === false) {
     fwrite(STDERR, "Failed to read fixture: {$fixture}\n");

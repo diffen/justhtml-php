@@ -78,7 +78,7 @@ Intro
 php examples/wikipedia_earth_demo.php
 ```
 
-The script loads `benchmarks/fixtures/wikipedia-earth.html` and prints a
+The script loads `examples/fixtures/wikipedia-earth.html` and prints a
 walkthrough of selectors, attributes, classes, inner/outer HTML, text, and
 Markdown extraction.
 
