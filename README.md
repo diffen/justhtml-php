@@ -7,6 +7,11 @@ tokenizer, serializer, and encoding tests).
 
 ## Why use JustHTML?
 
+If you're on PHP 8.4+ and don't need edge-case HTML5 correctness (which is most use cases),
+start with PHP's built-in [`DOM\\HTMLDocument`](https://www.php.net/manual/en/class.dom-htmldocument.php) instead.
+It's faster and implemented in C, and will be a better fit for many projects. Use JustHTML only if that
+doesn't meet your needs.
+
 ### 1. Correct HTML5 parsing
 
 - Passes the html5lib test suite (tree builder, tokenizer, serializer, encoding).
