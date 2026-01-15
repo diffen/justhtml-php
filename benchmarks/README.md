@@ -37,6 +37,23 @@ Options:
 - Max RSS uses `getrusage()` from the child process (maximum resident set size)
   and may show `n/a` if the metric is unavailable on the host OS.
 
+## Lead paragraph extraction (Wikipedia fixture)
+
+Benchmarks parse + extract of the first non-empty paragraph under
+`#mw-content-text` from the Wikipedia Earth fixture:
+
+```sh
+php benchmarks/lead_paragraph.php --iterations 5 --markdown
+```
+
+Options:
+
+- `--parser <name>` (repeatable)
+- `--iterations <n>`
+- `--file <path>` (override fixture path)
+- The script exits non-zero if any parser output does not match the baseline.
+- Use `--parser justhtml/stream` to include the event-streaming extractor.
+
 ## Optional parser dependencies
 
 Install any of these to include them in benchmark results:
@@ -70,6 +87,7 @@ Notes:
 Available parser labels in scripts:
 
 - `justhtml`
+- `justhtml/stream` (lead paragraph benchmark only)
 - `domdocument`
 - `dom/html-document`
 - `masterminds/html5`

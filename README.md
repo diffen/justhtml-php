@@ -110,13 +110,33 @@ part of the HTML specification.
 
 ## Streaming
 
+Streaming yields tokenizer events (`start`, `end`, `text`, `comment`, `doctype`) without building a DOM tree.
+It is event streaming, not chunked file I/O; you still pass a full HTML string.
+
+Pros:
+- Lower memory (no DOM build)
+- Early exit once you find what you need
+- Good for scans and counters
+
+Cons:
+- No CSS selectors
+- Manual state tracking
+- No tree-builder fixes (implicit end tags are not inserted)
+
 ```php
 use JustHTML\Stream;
 
+$links = 0;
 foreach (Stream::stream($html) as [$event, $data]) {
-    // $event is "start", "end", "text", "comment", or "doctype"
+    if ($event === 'start' && $data[0] === 'a') {
+        $links += 1;
+    }
 }
 ```
+
+Example timing for extracting the first non-empty paragraph under `#mw-content-text` on the Wikipedia fixture
+(PHP 8.5.1, 5-run average): streaming ~13 ms vs full parser ~120 ms.
+Your results will vary. For deeper explanations and examples, see [Streaming.md](Streaming.md).
 
 ## CLI
 
@@ -179,6 +199,27 @@ to regenerate.
 | symfony/dom-crawler | 54/1743 (3.1%) | 5.5 | CSS/XPath | Wrapper over DOMDocument (libxml) |
 
 See `benchmarks/README.md` for parser install instructions and details.
+
+## Lead paragraph benchmark (Wikipedia)
+
+Measures parse + extract of the first non-empty paragraph under `#mw-content-text`
+from `examples/fixtures/wikipedia-earth.html`:
+
+```sh
+php benchmarks/lead_paragraph.php --iterations 5 --markdown
+```
+
+Example results (PHP 8.5.1, 5-run average, all outputs match the JustHTML baseline):
+
+| Parser | Avg ms/lead | Total s | Items | Match |
+|--------|------------:|--------:|------:|:------|
+| justhtml | 120.06 | 0.60 | 5 | yes |
+| justhtml/stream | 13.09 | 0.07 | 5 | yes |
+| domdocument | 19.05 | 0.10 | 5 | yes |
+| dom/html-document | 15.36 | 0.08 | 5 | yes |
+| masterminds/html5 | 77.86 | 0.39 | 5 | yes |
+| voku/simple_html_dom | 263.35 | 1.32 | 5 | yes |
+| symfony/dom-crawler | 99.02 | 0.50 | 5 | yes |
 
 ## Tests
 
