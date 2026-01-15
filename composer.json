@@ -1,5 +1,5 @@
 {
-  "name": "diffen/justhtml-php",
+  "name": "diffen/justhtml",
   "description": "Pure-PHP HTML5 parser (JustHTML port) with html5lib compliance",
   "type": "library",
   "license": "MIT",

@@ -1,0 +1,7 @@
+/.gitattributes export-ignore
+/.claude export-ignore
+/benchmarks export-ignore
+/examples export-ignore
+/html5lib-tests export-ignore
+/run_tests.php export-ignore
+/scripts export-ignore

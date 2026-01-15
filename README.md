@@ -13,7 +13,7 @@ intentionally skipped.
 ## Installation
 
 ```sh
-composer require diffen/justhtml-php
+composer require diffen/justhtml
 ```
 
 ## Quickstart

@@ -3,5 +3,6 @@
 .DS_Store
 .idea/
 .vscode/
+/.claude/
 /justhtml-python/
 /benchmarks/fixtures/commoncrawl-*/

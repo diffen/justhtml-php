@@ -31,13 +31,13 @@ function http_get(string $url, array $headers = [], int $timeout = 30): string
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
-        $headers[] = 'User-Agent: justhtml-php-bench/1.0';
+        $headers[] = 'User-Agent: justhtml-bench/1.0';
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         $data = curl_exec($ch);
         return is_string($data) ? $data : '';
     }
 
-    $headerLines = array_merge($headers, ['User-Agent: justhtml-php-bench/1.0']);
+    $headerLines = array_merge($headers, ['User-Agent: justhtml-bench/1.0']);
     $context = stream_context_create([
         'http' => [
             'timeout' => $timeout,
