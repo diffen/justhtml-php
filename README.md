@@ -255,3 +255,4 @@ scripts/test-matrix-docker.sh
 - This repo includes a copy of html5lib tests in `html5lib-tests`.
 - Ported from Emil Stenström's JustHTML (Python) under the MIT License.
 - Inspired by Simon Willison's justjshtml port.
+- Most of this work was done by GPT-5.2-Codex, with a little help from Claude Opus 4.5.
