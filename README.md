@@ -27,6 +27,11 @@ doesn't meet your needs.
 - CSS selectors via `query()` and `matches()`.
 - HTML, text, and Markdown output helpers for common workflows.
 
+### 4. Event streaming
+
+- Streaming tokenizer events for low-memory, early-exit parsing.
+- None of the other parsers in the comparison table expose an HTML5 streaming API.
+
 ## Features
 
 - HTML5-compliant parsing with html5lib test coverage
