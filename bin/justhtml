@@ -36,6 +36,7 @@ if (file_exists($autoload)) {
 
 use JustHTML\JustHTML;
 use JustHTML\SelectorError;
+use JustHTML\Serialize;
 
 function resolve_version(string $root): string
 {
@@ -60,6 +61,48 @@ function resolve_version(string $root): string
     return 'dev';
 }
 
+function inner_html($node): string
+{
+    $children = $node->children ?? [];
+    if (!$children) {
+        return '';
+    }
+    $parts = [];
+    foreach ($children as $child) {
+        $childHtml = Serialize::toHtml($child);
+        if ($childHtml !== '') {
+            $parts[] = $childHtml;
+        }
+    }
+    return implode("\n", $parts);
+}
+
+function parse_limit(string $raw): int
+{
+    if ($raw === '' || !ctype_digit($raw)) {
+        fwrite(STDERR, "Invalid value for --limit: {$raw}\n");
+        exit(1);
+    }
+
+    $normalized = ltrim($raw, '0');
+    if ($normalized === '') {
+        $normalized = '0';
+    }
+
+    if ((int)$normalized < 1) {
+        fwrite(STDERR, "Invalid value for --limit: {$raw}\n");
+        exit(1);
+    }
+
+    $max = (string) PHP_INT_MAX;
+    if (strlen($normalized) > strlen($max) || (strlen($normalized) === strlen($max) && strcmp($normalized, $max) > 0)) {
+        fwrite(STDERR, "Value for --limit is too large: {$raw}\n");
+        exit(1);
+    }
+
+    return (int)$normalized;
+}
+
 function print_usage(int $code): void
 {
     $usage = <<<TEXT
@@ -68,10 +111,17 @@ Usage: justhtml [options] <path|->
 Options:
   --selector <css>   CSS selector (defaults to document root)
   --format <fmt>     html, text, or markdown (default: html)
+  --outer            HTML-only: output outer HTML (default)
+  --inner            HTML-only: output inner HTML
+  --attr <name>      Output attribute values (repeatable)
+  --missing <value>  Attr-only: placeholder for missing attributes (default: __MISSING__)
   --first            Only output first matching node
-  --separator <s>    Text-only: join string between text nodes (default: single space)
+  --limit <n>        Only output first N matching nodes
+  --separator <s>    Text-only: join string between text nodes (default: single space);
+                     Attr-only: join attributes (default: tab)
   --strip            Text-only: strip each text node and drop empty segments (default)
   --no-strip         Text-only: preserve text node whitespace
+  --count            Print number of matching nodes (incompatible with --first, --limit, --format, --attr)
   --version          Print version information
   -h, --help         Show this help
 TEXT;
@@ -85,9 +135,18 @@ $argc = $_SERVER['argc'];
 
 $selector = null;
 $format = 'html';
+$formatExplicit = false;
+$inner = false;
+$innerExplicit = false;
+$outerExplicit = false;
+$attrNames = [];
+$missing = '__MISSING__';
 $first = false;
+$limit = null;
 $separator = ' ';
+$separatorExplicit = false;
 $strip = true;
+$count = false;
 $path = null;
 
 for ($i = 1; $i < $argc; $i++) {
@@ -122,15 +181,83 @@ for ($i = 1; $i < $argc; $i++) {
             exit(1);
         }
         $format = $argv[++$i];
+        $formatExplicit = true;
         continue;
     }
     if (strpos($arg, '--format=') === 0) {
         $format = substr($arg, strlen('--format='));
+        $formatExplicit = true;
+        continue;
+    }
+
+    if ($arg === '--outer') {
+        $inner = false;
+        $outerExplicit = true;
+        continue;
+    }
+
+    if ($arg === '--inner') {
+        $inner = true;
+        $innerExplicit = true;
+        continue;
+    }
+
+    if ($arg === '--attr') {
+        if ($i + 1 >= $argc) {
+            fwrite(STDERR, "Missing value for --attr\n");
+            exit(1);
+        }
+        $name = $argv[++$i];
+        if ($name === '') {
+            fwrite(STDERR, "Invalid value for --attr: {$name}\n");
+            exit(1);
+        }
+        $attrNames[] = strtolower($name);
+        continue;
+    }
+    if (strpos($arg, '--attr=') === 0) {
+        $name = substr($arg, strlen('--attr='));
+        if ($name === '') {
+            fwrite(STDERR, "Invalid value for --attr: {$name}\n");
+            exit(1);
+        }
+        $attrNames[] = strtolower($name);
+        continue;
+    }
+
+    if ($arg === '--missing') {
+        if ($i + 1 >= $argc) {
+            fwrite(STDERR, "Missing value for --missing\n");
+            exit(1);
+        }
+        $missing = $argv[++$i];
+        continue;
+    }
+    if (strpos($arg, '--missing=') === 0) {
+        $missing = substr($arg, strlen('--missing='));
         continue;
     }
 
     if ($arg === '--first') {
         $first = true;
+        continue;
+    }
+
+    if ($arg === '--limit') {
+        if ($i + 1 >= $argc) {
+            fwrite(STDERR, "Missing value for --limit\n");
+            exit(1);
+        }
+        $limit = parse_limit($argv[++$i]);
+        continue;
+    }
+    if (strpos($arg, '--limit=') === 0) {
+        $limit = parse_limit(substr($arg, strlen('--limit=')));
+        continue;
+    }
+
+    if ($arg === '--count') {
+        $count = true;
         continue;
     }
 
@@ -140,10 +267,12 @@ for ($i = 1; $i < $argc; $i++) {
             exit(1);
         }
         $separator = $argv[++$i];
+        $separatorExplicit = true;
         continue;
     }
     if (strpos($arg, '--separator=') === 0) {
         $separator = substr($arg, strlen('--separator='));
+        $separatorExplicit = true;
         continue;
     }
 
@@ -175,6 +304,25 @@ if ($path === null) {
     print_usage(1);
 }
 
+if ($count) {
+    if ($first || $limit !== null || $formatExplicit || $attrNames) {
+        fwrite(STDERR, "--count cannot be combined with --first, --limit, --format, or --attr\n");
+        exit(1);
+    }
+}
+
+if ($first && $limit !== null) {
+    fwrite(STDERR, "--first cannot be combined with --limit\n");
+    exit(1);
+}
+
+if ($attrNames) {
+    if ($formatExplicit || $innerExplicit || $outerExplicit || $count) {
+        fwrite(STDERR, "--attr cannot be combined with --format, --inner, --outer, or --count\n");
+        exit(1);
+    }
+}
+
 if ($path === '-') {
     $html = stream_get_contents(STDIN);
     if ($html === false) {
@@ -199,17 +347,50 @@ try {
 }
 
 if (!$nodes) {
+    if ($count) {
+        fwrite(STDOUT, "0\n");
+        exit(0);
+    }
     exit(1);
 }
 
-if ($first) {
-    $nodes = [$nodes[0]];
+if ($count) {
+    fwrite(STDOUT, count($nodes) . PHP_EOL);
+    exit(0);
+}
+
+if ($limit === null && $first) {
+    $limit = 1;
+}
+
+if ($limit !== null && count($nodes) > $limit) {
+    $nodes = array_slice($nodes, 0, $limit);
+}
+
+if ($attrNames) {
+    $outputs = [];
+    $attrSeparator = $separatorExplicit ? $separator : "\t";
+    foreach ($nodes as $node) {
+        $attrs = $node->attrs ?? [];
+        $fields = [];
+        foreach ($attrNames as $name) {
+            if (is_array($attrs) && array_key_exists($name, $attrs)) {
+                $value = $attrs[$name];
+                $fields[] = $value === null ? '' : (string)$value;
+            } else {
+                $fields[] = $missing;
+            }
+        }
+        $outputs[] = implode($attrSeparator, $fields);
+    }
+    fwrite(STDOUT, implode("\n", $outputs) . PHP_EOL);
+    exit(0);
 }
 
 if ($format === 'html') {
     $outputs = [];
     foreach ($nodes as $node) {
-        $outputs[] = $node->toHtml();
+        $outputs[] = $inner ? inner_html($node) : $node->toHtml();
     }
     fwrite(STDOUT, implode("\n", $outputs) . PHP_EOL);
     exit(0);

@@ -97,6 +97,49 @@ Output:
 Hello *world*!
 ```
 
+## --outer / --inner
+
+HTML output uses outer HTML by default. Use `--inner` to print only the
+matched node's children (inner HTML). `--outer` is a no-op that makes the
+default explicit. These flags only affect `--format html`.
+
+```sh
+php bin/justhtml sample.html --selector "p.lead" --format html --inner
+```
+
+Output:
+
+```html
+Hello
+<em>world</em>
+!
+```
+
+## --attr / --missing
+
+Extract attribute values from matched nodes. Repeat `--attr` to output multiple
+attributes per node (tab-separated by default). Missing attributes are replaced
+with `__MISSING__` by default; override with `--missing`.
+
+```sh
+php bin/justhtml sample.html --selector "p" --attr class --attr id
+```
+
+Output (tab-separated):
+
+```text
+lead	__MISSING__
+__MISSING__	__MISSING__
+```
+
+Use `--separator` to change the field separator:
+
+```sh
+php bin/justhtml sample.html --selector "p" --attr class --attr id --separator ","
+```
+
+`--attr` cannot be combined with `--format`, `--inner`, `--outer`, or `--count`.
+
 ## --first
 
 Limit to the first match:
@@ -122,9 +165,43 @@ Output:
 Hello world!
 ```
 
+`--first` is equivalent to `--limit 1` and cannot be combined with `--limit`.
+
+## --limit
+
+Limit to the first N matches. This is equivalent to `--first` when N is 1.
+
+```sh
+php bin/justhtml sample.html --selector "p" --format text --limit 2
+```
+
+Output:
+
+```text
+Hello world!
+Second para.
+```
+
+## --count
+
+Print the number of matching nodes:
+
+```sh
+php bin/justhtml sample.html --selector "p" --count
+```
+
+Output:
+
+```text
+2
+```
+
+`--count` cannot be combined with `--first`, `--limit`, `--format`, or `--attr`.
+
 ## --separator
 
-Join text nodes with a custom separator (text output only):
+Join text nodes with a custom separator (text output only). In `--attr` mode,
+this controls the field separator (default: tab).
 
 ```sh
 php bin/justhtml whitespace.html --selector ".sep" --format text

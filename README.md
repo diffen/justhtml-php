@@ -170,10 +170,17 @@ Usage: justhtml [options] <path|->
 Options:
   --selector <css>   CSS selector (defaults to document root)
   --format <fmt>     html, text, or markdown (default: html)
+  --outer            HTML-only: output outer HTML (default)
+  --inner            HTML-only: output inner HTML
+  --attr <name>      Output attribute values (repeatable)
+  --missing <value>  Attr-only: placeholder for missing attributes (default: __MISSING__)
   --first            Only output first matching node
-  --separator <s>    Text-only: join string between text nodes (default: single space)
+  --limit <n>        Only output first N matching nodes
+  --separator <s>    Text-only: join string between text nodes (default: single space);
+                     Attr-only: join attributes (default: tab)
   --strip            Text-only: strip each text node and drop empty segments (default)
   --no-strip         Text-only: preserve text node whitespace
+  --count            Print number of matching nodes (incompatible with --first, --limit, --format, --attr)
   --version          Print version information
   -h, --help         Show this help
 ```

@@ -7,6 +7,13 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-02-02
+
+- Add `--count` to print the number of matching nodes.
+- Add `--inner`/`--outer` to control HTML output.
+- Add `--limit` to return the first N matches.
+- Add `--attr`/`--missing` for attribute extraction.
+
 ## [0.1.1] - 2026-02-02
 
 - CLI --version now reports the package version (Composer or VERSION file).
