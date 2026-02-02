@@ -7,6 +7,10 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-02-02
+
+- CLI --version now reports the package version (Composer or VERSION file).
+
 ## [0.1.0] - 2025-01-13
 
 Initial release.

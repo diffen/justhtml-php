@@ -37,6 +37,29 @@ if (file_exists($autoload)) {
 use JustHTML\JustHTML;
 use JustHTML\SelectorError;
 
+function resolve_version(string $root): string
+{
+    if (class_exists(\Composer\InstalledVersions::class)
+        && method_exists(\Composer\InstalledVersions::class, 'isInstalled')
+        && \Composer\InstalledVersions::isInstalled('diffen/justhtml')
+    ) {
+        $pretty = \Composer\InstalledVersions::getPrettyVersion('diffen/justhtml');
+        if (is_string($pretty) && $pretty !== '') {
+            return preg_replace('/^v(?=\\d)/', '', $pretty);
+        }
+    }
+
+    $versionFile = $root . '/VERSION';
+    if (is_file($versionFile)) {
+        $version = trim((string) file_get_contents($versionFile));
+        if ($version !== '') {
+            return $version;
+        }
+    }
+
+    return 'dev';
+}
+
 function print_usage(int $code): void
 {
     $usage = <<<TEXT
@@ -75,7 +98,8 @@ for ($i = 1; $i < $argc; $i++) {
     }
 
     if ($arg === '--version') {
-        fwrite(STDOUT, "justhtml dev\n");
+        $version = resolve_version($root);
+        fwrite(STDOUT, "justhtml {$version}\n");
         exit(0);
     }
 
