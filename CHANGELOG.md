@@ -7,6 +7,11 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-02-03
+
+- Document Homebrew install and expanded CLI examples (piping, selectors).
+- Add Docker CLI matrix smoke tests.
+
 ## [0.1.2] - 2026-02-02
 
 - Add `--count` to print the number of matching nodes.
