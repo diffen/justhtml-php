@@ -52,6 +52,12 @@ composer require diffen/justhtml
 
 Non-Composer use: include `src/JustHTML/*.php` with your autoloader and keep `data/` alongside `src/`.
 
+CLI via Homebrew:
+
+```sh
+brew install diffen/justhtml/justhtml
+```
+
 ## Quickstart
 
 ```php
