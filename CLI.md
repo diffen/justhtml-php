@@ -41,7 +41,7 @@ HTML
 
 ## --selector
 
-Select matching nodes:
+Select matching nodes (single selector):
 
 ```sh
 php bin/justhtml sample.html --selector "p.lead" --format text
@@ -50,6 +50,19 @@ php bin/justhtml sample.html --selector "p.lead" --format text
 Output:
 
 ```text
+Hello world!
+```
+
+Select multiple selectors with a comma-separated list:
+
+```sh
+php bin/justhtml sample.html --selector "h1, p.lead" --format text
+```
+
+Output:
+
+```text
+Title
 Hello world!
 ```
 
@@ -264,6 +277,40 @@ Output:
 
 ```text
 Hello world!
+```
+
+## Piping examples (real pages)
+
+These examples use a live page and pipe HTML into `justhtml`.
+
+```sh
+# Extract the first non-empty paragraph as text
+curl -s https://en.wikipedia.org/wiki/Earth | \
+  php bin/justhtml - --selector "#mw-content-text p:not(:empty)" --format text --first
+
+# Extract links from the lead section (first 10 hrefs)
+curl -s https://en.wikipedia.org/wiki/Earth | \
+  php bin/justhtml - --selector "#mw-content-text p a" --attr href --limit 10 --separator "\n"
+
+# Get the lead section as Markdown
+curl -s https://en.wikipedia.org/wiki/Earth | \
+  php bin/justhtml - --selector "#mw-content-text" --format markdown --first
+
+# Count images on the page
+curl -s https://en.wikipedia.org/wiki/Earth | \
+  php bin/justhtml - --selector "img" --count
+
+# Output the infobox as HTML (outer HTML)
+curl -s https://en.wikipedia.org/wiki/Earth | \
+  php bin/justhtml - --selector "table.infobox" --format html --outer --first
+
+# Preserve whitespace and separate paragraphs
+curl -s https://en.wikipedia.org/wiki/Earth | \
+  php bin/justhtml - --selector "#mw-content-text p" --format text --no-strip --separator "\n\n" --limit 3
+
+# Build a quick table of contents from headings
+curl -s https://en.wikipedia.org/wiki/Earth | \
+  php bin/justhtml - --selector "#mw-content-text h2, #mw-content-text h3" --format text --separator "\n"
 ```
 
 ## --version and --help

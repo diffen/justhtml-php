@@ -86,7 +86,7 @@ Intro
 Input HTML:
 
 ```html
-<main><p>Hello</p></main>
+<main><p>Hello</p><a href="/a">Read</a></main>
 ```
 
 ```php
@@ -103,6 +103,19 @@ Expected output:
 Hello
 true
 false
+```
+
+Multiple selectors (comma-separated):
+
+```php
+$nodes = $doc->query('main p, main a'); // Multiple selectors
+echo count($nodes) . "\n";
+```
+
+Expected output:
+
+```text
+2
 ```
 
 ## Markdown
