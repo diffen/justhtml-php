@@ -52,9 +52,10 @@ composer require diffen/justhtml
 
 Non-Composer use: include `src/JustHTML/*.php` with your autoloader and keep `data/` alongside `src/`.
 
-CLI via Homebrew:
+CLI via Homebrew (6.0.0+ requires a one-time trust step, which lets Homebrew run this MIT-licensed formula's install code):
 
 ```sh
+brew trust --formula diffen/justhtml/justhtml
 brew install diffen/justhtml/justhtml
 ```
 
