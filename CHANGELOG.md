@@ -7,6 +7,18 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-07-11
+
+- Clone caller-supplied `TokenizerOpts` before fragment-context tokenizer
+  state adjustments so reused opts no longer leak RCDATA/RAWTEXT/PLAINTEXT
+  into later parses.
+- Seed the `#id tag` selector fast path from real ancestors above the query
+  root so scoped queries match the generic matcher.
+- Compare Noah's Ark active-formatting attribute signatures with strict
+  string equality (normalize keys/values; sort with `strcmp`).
+- Correct the "in row" ignored end-tag list to the HTML spec
+  (`body`, `caption`, `col`, `colgroup`, `html`, `td`, `th`).
+
 ## [0.1.4] - 2026-07-10
 
 - Fix foreign-content (SVG/MathML) serialization and integration-point
