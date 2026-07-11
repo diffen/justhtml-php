@@ -7,6 +7,23 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-07-10
+
+- Fix foreign-content (SVG/MathML) serialization and integration-point
+  tokenization in both the full parser and the streaming API.
+- Preserve document text exactly in pretty-printed HTML output.
+- Fix CSS selector escape parsing, functional pseudo-class arguments, and
+  descendant-combinator backtracking correctness.
+- Report parse error positions as 1-based character line/columns, consistent
+  across LF/CR/CRLF and multibyte input; strip a leading UTF-8 BOM.
+- Fix fragment-context tokenizer states (RCDATA/rawtext) and DOM mutation
+  validation ordering.
+- Performance: bounded entity lookahead, memoized selector matching,
+  per-parent structural pseudo-class indexes, linear fragment finalization,
+  faster streaming and compact serialization.
+- Run script-off html5lib tree tests (1770 passing); `run_tests.php` now
+  exits nonzero on failure.
+
 ## [0.1.3] - 2026-02-03
 
 - Document Homebrew install and expanded CLI examples (piping, selectors).
