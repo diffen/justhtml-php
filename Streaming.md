@@ -281,11 +281,11 @@ printf("Stream avg: %.2f ms\n", $avgStream);
 ```
 
 Example results on one machine for lead paragraph extraction
-(PHP 8.5.1, 5-run average, Wikipedia fixture):
+(PHP 8.5.8, 5-run average, Wikipedia fixture):
 
 ```text
-Full parser avg: 120.06 ms
-Stream avg: 13.09 ms
+Full parser avg: 171.85 ms
+Stream avg: 23.55 ms
 ```
 
 Your results will vary by machine and PHP version.

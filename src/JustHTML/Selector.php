@@ -93,17 +93,68 @@ final class SelectorTokenizer
         return $this->isNameStart($ch) || ($code >= 48 && $code <= 57);
     }
 
+    private function readEscape(): string
+    {
+        // The leading backslash has not been consumed yet.
+        $this->pos += 1;
+        if ($this->pos >= $this->length) {
+            throw new SelectorError('Trailing escape in selector: ' . var_export($this->selector, true));
+        }
+
+        $ch = $this->selector[$this->pos];
+        if ($ch === "\n" || $ch === "\r" || $ch === "\f") {
+            throw new SelectorError('Invalid newline escape in selector: ' . var_export($this->selector, true));
+        }
+
+        if (ctype_xdigit($ch)) {
+            $hex = '';
+            while ($this->pos < $this->length && strlen($hex) < 6 && ctype_xdigit($this->selector[$this->pos])) {
+                $hex .= $this->selector[$this->pos];
+                $this->pos += 1;
+            }
+            if ($this->pos < $this->length) {
+                $ws = $this->selector[$this->pos];
+                if ($ws === ' ' || $ws === "\t" || $ws === "\n" || $ws === "\r" || $ws === "\f") {
+                    $this->pos += 1;
+                    if ($ws === "\r" && $this->pos < $this->length && $this->selector[$this->pos] === "\n") {
+                        $this->pos += 1;
+                    }
+                }
+            }
+            $codepoint = hexdec($hex);
+            if ($codepoint === 0 || $codepoint > 0x10FFFF || ($codepoint >= 0xD800 && $codepoint <= 0xDFFF)) {
+                return "\u{FFFD}";
+            }
+            return Str::codepointToUtf8($codepoint);
+        }
+
+        $this->pos += 1;
+        return $ch;
+    }
+
     private function readName(): string
     {
+        $parts = [];
         $start = $this->pos;
         while ($this->pos < $this->length) {
             $ch = $this->selector[$this->pos];
+            if ($ch === '\\') {
+                if ($this->pos > $start) {
+                    $parts[] = substr($this->selector, $start, $this->pos - $start);
+                }
+                $parts[] = $this->readEscape();
+                $start = $this->pos;
+                continue;
+            }
             if (!$this->isNameChar($ch)) {
                 break;
             }
             $this->pos += 1;
         }
-        return substr($this->selector, $start, $this->pos - $start);
+        if ($this->pos > $start) {
+            $parts[] = substr($this->selector, $start, $this->pos - $start);
+        }
+        return implode('', $parts);
     }
 
     private function readString(string $quote): string
@@ -125,15 +176,21 @@ final class SelectorTokenizer
                 if ($this->pos > $start) {
                     $parts[] = substr($this->selector, $start, $this->pos - $start);
                 }
-                $this->pos += 1;
-                if ($this->pos < $this->length) {
-                    $parts[] = $this->selector[$this->pos];
-                    $this->pos += 1;
+                $next = $this->peek(1);
+                if ($next === "\n" || $next === "\r" || $next === "\f") {
+                    $this->pos += 2;
+                    if ($next === "\r" && $this->pos < $this->length && $this->selector[$this->pos] === "\n") {
+                        $this->pos += 1;
+                    }
                     $start = $this->pos;
-                } else {
-                    $start = $this->pos;
+                    continue;
                 }
+                $parts[] = $this->readEscape();
+                $start = $this->pos;
             } else {
+                if ($ch === "\n" || $ch === "\r" || $ch === "\f") {
+                    throw new SelectorError('Unescaped newline in selector string: ' . var_export($this->selector, true));
+                }
                 $this->pos += 1;
             }
         }
@@ -141,17 +198,92 @@ final class SelectorTokenizer
         throw new SelectorError('Unterminated string in selector: ' . var_export($this->selector, true));
     }
 
+    private function advancePastArgumentEscape(): void
+    {
+        // The leading backslash has not been consumed yet. For finding the
+        // functional pseudo's closing parenthesis, it is enough to skip the
+        // escaped source character; hexadecimal escapes contain no literal
+        // parentheses to confuse the depth counter.
+        $this->pos += 1;
+        if ($this->pos >= $this->length) {
+            return;
+        }
+        $ch = $this->selector[$this->pos];
+        $this->pos += 1;
+        if ($ch === "\r" && $this->pos < $this->length && $this->selector[$this->pos] === "\n") {
+            $this->pos += 1;
+        }
+    }
+
+    private function readPseudoArgument(): string
+    {
+        $depth = 1;
+        $start = $this->pos;
+        $quote = null;
+
+        while ($this->pos < $this->length && $depth > 0) {
+            $ch = $this->selector[$this->pos];
+            if ($quote !== null) {
+                if ($ch === '\\') {
+                    $this->advancePastArgumentEscape();
+                    continue;
+                }
+                if ($ch === $quote) {
+                    $quote = null;
+                }
+                $this->pos += 1;
+                continue;
+            }
+
+            if ($ch === '"' || $ch === "'") {
+                $quote = $ch;
+                $this->pos += 1;
+                continue;
+            }
+            if ($ch === '\\') {
+                $this->advancePastArgumentEscape();
+                continue;
+            }
+            if ($ch === '(') {
+                $depth += 1;
+                $this->pos += 1;
+                continue;
+            }
+            if ($ch === ')') {
+                $depth -= 1;
+                if ($depth === 0) {
+                    break;
+                }
+            }
+            $this->pos += 1;
+        }
+
+        return trim(substr($this->selector, $start, $this->pos - $start));
+    }
+
     private function readUnquotedAttrValue(): string
     {
+        $parts = [];
         $start = $this->pos;
         while ($this->pos < $this->length) {
             $ch = $this->selector[$this->pos];
             if ($ch === ' ' || $ch === "\t" || $ch === "\n" || $ch === "\r" || $ch === "\f" || $ch === ']') {
                 break;
             }
+            if ($ch === '\\') {
+                if ($this->pos > $start) {
+                    $parts[] = substr($this->selector, $start, $this->pos - $start);
+                }
+                $parts[] = $this->readEscape();
+                $start = $this->pos;
+                continue;
+            }
             $this->pos += 1;
         }
-        return substr($this->selector, $start, $this->pos - $start);
+        if ($this->pos > $start) {
+            $parts[] = substr($this->selector, $start, $this->pos - $start);
+        }
+        return implode('', $parts);
     }
 
     /** @return array<int, SelectorToken> */
@@ -281,21 +413,7 @@ final class SelectorTokenizer
                     $tokens[] = new SelectorToken(SelectorTokenType::PAREN_OPEN);
                     $this->skipWhitespace();
 
-                    $parenDepth = 1;
-                    $argStart = $this->pos;
-                    while ($this->pos < $this->length && $parenDepth > 0) {
-                        $c = $this->selector[$this->pos];
-                        if ($c === '(') {
-                            $parenDepth += 1;
-                        } elseif ($c === ')') {
-                            $parenDepth -= 1;
-                        }
-                        if ($parenDepth > 0) {
-                            $this->pos += 1;
-                        }
-                    }
-
-                    $arg = trim(substr($this->selector, $argStart, $this->pos - $argStart));
+                    $arg = $this->readPseudoArgument();
                     if ($arg !== '') {
                         $tokens[] = new SelectorToken(SelectorTokenType::STRING, $arg);
                     }
@@ -309,7 +427,7 @@ final class SelectorTokenizer
                 continue;
             }
 
-            if ($this->isNameStart($ch)) {
+            if ($ch === '\\' || $this->isNameStart($ch)) {
                 $name = $this->readName();
                 $tokens[] = new SelectorToken(SelectorTokenType::TAG, strtolower($name));
                 continue;
@@ -337,6 +455,7 @@ final class SelectorSimple
     public ?string $operator;
     public ?string $value;
     public ?string $arg;
+    public $parsedArg = null;
 
     public function __construct(
         string $type,
@@ -548,15 +667,110 @@ final class SelectorParser
                 $arg = $this->advance()->value;
             }
             $this->expect(SelectorTokenType::PAREN_CLOSE);
-            return new SelectorSimple(SelectorSimple::TYPE_PSEUDO, $name, null, null, $arg);
+            $pseudo = new SelectorSimple(SelectorSimple::TYPE_PSEUDO, $name, null, null, $arg);
+            $lowerName = strtolower($name);
+            if ($lowerName === 'not' && $arg !== null && $arg !== '') {
+                $pseudo->parsedArg = Selector::parseSelector($arg);
+            } elseif ($lowerName === 'nth-child' || $lowerName === 'nth-of-type') {
+                // false is an intentional invalid-expression sentinel. It
+                // distinguishes an invalid An+B from an argument that has not
+                // been parsed and avoids retrying the parse for every node.
+                $pseudo->parsedArg = self::parseNthExpression($arg);
+            }
+            return $pseudo;
         }
 
         return new SelectorSimple(SelectorSimple::TYPE_PSEUDO, $name);
+    }
+
+    /** @return array{0:int,1:int}|false */
+    private static function parseNthExpression(?string $expr)
+    {
+        if ($expr === null) {
+            return false;
+        }
+        $expr = strtolower(trim($expr));
+        if ($expr === '') {
+            return false;
+        }
+        if ($expr === 'odd') {
+            return [2, 1];
+        }
+        if ($expr === 'even') {
+            return [2, 0];
+        }
+
+        $expr = str_replace(' ', '', $expr);
+        if (strpos($expr, 'n') !== false) {
+            $parts = explode('n', $expr, 2);
+            $aPart = $parts[0];
+            $bPart = $parts[1] ?? '';
+
+            if ($aPart === '' || $aPart === '+') {
+                $a = 1;
+            } elseif ($aPart === '-') {
+                $a = -1;
+            } elseif (preg_match('/^[+-]?\d+$/', $aPart)) {
+                $a = (int)$aPart;
+            } else {
+                return false;
+            }
+
+            $b = 0;
+            if ($bPart !== '') {
+                if (!preg_match('/^[+-]?\d+$/', $bPart)) {
+                    return false;
+                }
+                $b = (int)$bPart;
+            }
+        } else {
+            if (!preg_match('/^[+-]?\d+$/', $expr)) {
+                return false;
+            }
+            $a = 0;
+            $b = (int)$expr;
+        }
+
+        return [$a, $b];
     }
 }
 
 final class SelectorMatcher
 {
+    /**
+     * Lazily built per-parent indexes for a query operation. The `previous`
+     * entries deliberately hold node objects and therefore must be released
+     * when the public operation finishes.
+     *
+     * @var array<int, array{
+     *     positions:array<int,int>,
+     *     count:int,
+     *     typePositions:array<int,int>,
+     *     typeCounts:array<string,int>,
+     *     previous:array<int,mixed>
+     * }>
+     */
+    private array $parentIndexes = [];
+    /** @var array<int, array<int, array<int, bool>>> */
+    private array $complexMatchMemo = [];
+    /** @var array<int, bool> */
+    private array $standaloneSiblingScans = [];
+    private bool $standalone = false;
+
+    public function beginOperation(bool $standalone): void
+    {
+        $this->releaseOperation();
+        $this->standalone = $standalone;
+    }
+
+    public function releaseOperation(): void
+    {
+        $this->parentIndexes = [];
+        $this->complexMatchMemo = [];
+        $this->standaloneSiblingScans = [];
+        $this->standalone = false;
+    }
+
     public function matches($node, $selector): bool
     {
         if ($selector instanceof SelectorList) {
@@ -581,65 +795,71 @@ final class SelectorMatcher
 
     private function matchesComplex($node, SelectorComplex $selector): bool
     {
+        if (!$selector->parts) {
+            return false;
+        }
+
+        return $this->matchesComplexAt($node, $selector, count($selector->parts) - 1);
+    }
+
+    private function matchesComplexAt($node, SelectorComplex $selector, int $index): bool
+    {
+        if (!is_object($node)) {
+            return false;
+        }
+        $selectorId = spl_object_id($selector);
+        $nodeId = spl_object_id($node);
+        if (isset($this->complexMatchMemo[$selectorId][$index])
+            && array_key_exists($nodeId, $this->complexMatchMemo[$selectorId][$index])) {
+            return $this->complexMatchMemo[$selectorId][$index][$nodeId];
+        }
+
+        $result = $this->matchesComplexAtUncached($node, $selector, $index);
+        $this->complexMatchMemo[$selectorId][$index][$nodeId] = $result;
+        return $result;
+    }
+
+    private function matchesComplexAtUncached($node, SelectorComplex $selector, int $index): bool
+    {
         $parts = $selector->parts;
-        if (!$parts) {
+        if (!$this->matchesCompound($node, $parts[$index][1])) {
             return false;
         }
-
-        $last = $parts[count($parts) - 1];
-        if (!$this->matchesCompound($node, $last[1])) {
-            return false;
+        if ($index === 0) {
+            return true;
         }
 
-        $current = $node;
-        for ($i = count($parts) - 2; $i >= 0; $i--) {
-            $combinator = $parts[$i + 1][0];
-            $prevCompound = $parts[$i][1];
-
-            if ($combinator === ' ') {
-                $found = false;
-                $ancestor = $current->parent ?? null;
-                while ($ancestor) {
-                    if ($this->matchesCompound($ancestor, $prevCompound)) {
-                        $current = $ancestor;
-                        $found = true;
-                        break;
-                    }
-                    $ancestor = $ancestor->parent ?? null;
+        $combinator = $parts[$index][0];
+        if ($combinator === '>') {
+            $parent = $node->parent ?? null;
+            return $parent !== null && $this->matchesComplexAt($parent, $selector, $index - 1);
+        }
+        if ($combinator === '+') {
+            $sibling = $this->getPreviousSibling($node);
+            return $sibling !== null && $this->matchesComplexAt($sibling, $selector, $index - 1);
+        }
+        if ($combinator === ' ') {
+            $candidate = $node->parent ?? null;
+            while ($candidate) {
+                if ($this->matchesComplexAt($candidate, $selector, $index - 1)) {
+                    return true;
                 }
-                if (!$found) {
-                    return false;
-                }
-            } elseif ($combinator === '>') {
-                $parent = $current->parent ?? null;
-                if (!$parent || !$this->matchesCompound($parent, $prevCompound)) {
-                    return false;
-                }
-                $current = $parent;
-            } elseif ($combinator === '+') {
-                $sibling = $this->getPreviousSibling($current);
-                if (!$sibling || !$this->matchesCompound($sibling, $prevCompound)) {
-                    return false;
-                }
-                $current = $sibling;
-            } else {
-                $found = false;
-                $sibling = $this->getPreviousSibling($current);
-                while ($sibling) {
-                    if ($this->matchesCompound($sibling, $prevCompound)) {
-                        $current = $sibling;
-                        $found = true;
-                        break;
-                    }
-                    $sibling = $this->getPreviousSibling($sibling);
-                }
-                if (!$found) {
-                    return false;
-                }
+                $candidate = $candidate->parent ?? null;
             }
+            return false;
         }
 
-        return true;
+        // A general-sibling search performs repeated predecessor lookups, so
+        // even for standalone matches it is cheaper to build this operation's
+        // parent index once than to rescan from the start for every sibling.
+        $candidate = $this->getPreviousSibling($node, false);
+        while ($candidate) {
+            if ($this->matchesComplexAt($candidate, $selector, $index - 1)) {
+                return true;
+            }
+            $candidate = $this->getPreviousSibling($candidate, false);
+        }
+        return false;
     }
 
     private function matchesCompound($node, SelectorCompound $compound): bool
@@ -762,14 +982,14 @@ final class SelectorMatcher
         }
 
         if ($name === 'nth-child') {
-            return $this->matchesNthChild($node, $selector->arg);
+            return $this->matchesNthChild($node, $selector->parsedArg);
         }
 
         if ($name === 'not') {
             if ($selector->arg === null || $selector->arg === '') {
                 return true;
             }
-            $inner = Selector::parseSelector($selector->arg);
+            $inner = $selector->parsedArg ?? Selector::parseSelector($selector->arg);
             return !$this->matches($node, $inner);
         }
 
@@ -786,7 +1006,7 @@ final class SelectorMatcher
                     continue;
                 }
                 if ($child->name === '#text') {
-                    if ($child->data && trim((string)$child->data) !== '') {
+                    if ((string)$child->data !== '') {
                         return false;
                     }
                 } elseif (!(isset($child->name[0]) && $child->name[0] === '#')) {
@@ -813,7 +1033,7 @@ final class SelectorMatcher
         }
 
         if ($name === 'nth-of-type') {
-            return $this->matchesNthOfType($node, $selector->arg);
+            return $this->matchesNthOfType($node, $selector->parsedArg);
         }
 
         if ($name === 'only-of-type') {
@@ -823,38 +1043,74 @@ final class SelectorMatcher
         throw new SelectorError('Unsupported pseudo-class: :' . $name);
     }
 
-    /** @return array<int, mixed> */
-    private function getElementChildren($parent): array
+    private function isElementChild($node): bool
     {
-        if (!$parent || !$parent->hasChildNodes()) {
-            return [];
-        }
-        $elements = [];
-        foreach ($parent->children as $child) {
-            if (property_exists($child, 'name') && !(isset($child->name[0]) && $child->name[0] === '#')) {
-                $elements[] = $child;
-            }
-        }
-        return $elements;
+        return is_object($node)
+            && property_exists($node, 'name')
+            && !(isset($node->name[0]) && $node->name[0] === '#');
     }
 
-    private function getPreviousSibling($node)
+    private function ensureParentIndex($parent): int
+    {
+        $parentId = spl_object_id($parent);
+        if (isset($this->parentIndexes[$parentId])) {
+            return $parentId;
+        }
+
+        $positions = [];
+        $typePositions = [];
+        $typeCounts = [];
+        $previous = [];
+        $position = 0;
+        $previousElement = null;
+        foreach ($parent->children ?? [] as $child) {
+            if (!$this->isElementChild($child)) {
+                continue;
+            }
+            $childId = spl_object_id($child);
+            $position += 1;
+            $positions[$childId] = $position;
+            $previous[$childId] = $previousElement;
+            $nodeName = strtolower((string)$child->name);
+            $typeCounts[$nodeName] = ($typeCounts[$nodeName] ?? 0) + 1;
+            $typePositions[$childId] = $typeCounts[$nodeName];
+            $previousElement = $child;
+        }
+
+        $this->parentIndexes[$parentId] = [
+            'positions' => $positions,
+            'count' => $position,
+            'typePositions' => $typePositions,
+            'typeCounts' => $typeCounts,
+            'previous' => $previous,
+        ];
+        return $parentId;
+    }
+
+    private function getPreviousSibling($node, bool $allowStandaloneScan = true)
     {
         $parent = $node->parent ?? null;
         if (!$parent) {
             return null;
         }
 
-        $prev = null;
-        foreach ($parent->children as $child) {
-            if ($child === $node) {
-                return $prev;
+        $parentId = spl_object_id($parent);
+        if ($this->standalone && $allowStandaloneScan && !isset($this->standaloneSiblingScans[$parentId])) {
+            $this->standaloneSiblingScans[$parentId] = true;
+            $previous = null;
+            foreach ($parent->children ?? [] as $child) {
+                if ($child === $node) {
+                    return $previous;
+                }
+                if ($this->isElementChild($child)) {
+                    $previous = $child;
+                }
             }
-            if (property_exists($child, 'name') && !(isset($child->name[0]) && $child->name[0] === '#')) {
-                $prev = $child;
-            }
+            return null;
         }
-        return null;
+
+        $parentId = $this->ensureParentIndex($parent);
+        return $this->parentIndexes[$parentId]['previous'][spl_object_id($node)] ?? null;
     }
 
     private function isFirstChild($node): bool
@@ -863,8 +1119,17 @@ final class SelectorMatcher
         if (!$parent) {
             return false;
         }
-        $elements = $this->getElementChildren($parent);
-        return $elements && $elements[0] === $node;
+        if ($this->standalone) {
+            foreach ($parent->children ?? [] as $child) {
+                if ($this->isElementChild($child)) {
+                    return $child === $node;
+                }
+            }
+            return false;
+        }
+
+        $parentId = $this->ensureParentIndex($parent);
+        return ($this->parentIndexes[$parentId]['positions'][spl_object_id($node)] ?? 0) === 1;
     }
 
     private function isLastChild($node): bool
@@ -873,8 +1138,19 @@ final class SelectorMatcher
         if (!$parent) {
             return false;
         }
-        $elements = $this->getElementChildren($parent);
-        return $elements && $elements[count($elements) - 1] === $node;
+        if ($this->standalone) {
+            $children = $parent->children ?? [];
+            for ($i = count($children) - 1; $i >= 0; $i--) {
+                if ($this->isElementChild($children[$i])) {
+                    return $children[$i] === $node;
+                }
+            }
+            return false;
+        }
+
+        $parentId = $this->ensureParentIndex($parent);
+        $position = $this->parentIndexes[$parentId]['positions'][spl_object_id($node)] ?? 0;
+        return $position !== 0 && $position === $this->parentIndexes[$parentId]['count'];
     }
 
     private function isFirstOfType($node): bool
@@ -884,12 +1160,17 @@ final class SelectorMatcher
             return false;
         }
         $nodeName = strtolower((string)$node->name);
-        foreach ($this->getElementChildren($parent) as $child) {
-            if (strtolower((string)$child->name) === $nodeName) {
-                return $child === $node;
+        if ($this->standalone) {
+            foreach ($parent->children ?? [] as $child) {
+                if ($this->isElementChild($child) && strtolower((string)$child->name) === $nodeName) {
+                    return $child === $node;
+                }
             }
+            return false;
         }
-        return false;
+
+        $parentId = $this->ensureParentIndex($parent);
+        return ($this->parentIndexes[$parentId]['typePositions'][spl_object_id($node)] ?? 0) === 1;
     }
 
     private function isLastOfType($node): bool
@@ -899,63 +1180,21 @@ final class SelectorMatcher
             return false;
         }
         $nodeName = strtolower((string)$node->name);
-        $last = null;
-        foreach ($this->getElementChildren($parent) as $child) {
-            if (strtolower((string)$child->name) === $nodeName) {
-                $last = $child;
-            }
-        }
-        return $last === $node;
-    }
-
-    private function parseNthExpression(?string $expr): ?array
-    {
-        if ($expr === null) {
-            return null;
-        }
-        $expr = strtolower(trim($expr));
-        if ($expr === '') {
-            return null;
-        }
-        if ($expr === 'odd') {
-            return [2, 1];
-        }
-        if ($expr === 'even') {
-            return [2, 0];
-        }
-
-        $expr = str_replace(' ', '', $expr);
-        if (strpos($expr, 'n') !== false) {
-            $parts = explode('n', $expr, 2);
-            $aPart = $parts[0];
-            $bPart = $parts[1] ?? '';
-
-            if ($aPart === '' || $aPart === '+') {
-                $a = 1;
-            } elseif ($aPart === '-') {
-                $a = -1;
-            } elseif (preg_match('/^[+-]?\d+$/', $aPart)) {
-                $a = (int)$aPart;
-            } else {
-                return null;
-            }
-
-            $b = 0;
-            if ($bPart !== '') {
-                if (!preg_match('/^[+-]?\d+$/', $bPart)) {
-                    return null;
+        if ($this->standalone) {
+            $children = $parent->children ?? [];
+            for ($i = count($children) - 1; $i >= 0; $i--) {
+                $child = $children[$i];
+                if ($this->isElementChild($child) && strtolower((string)$child->name) === $nodeName) {
+                    return $child === $node;
                 }
-                $b = (int)$bPart;
             }
-        } else {
-            if (!preg_match('/^[+-]?\d+$/', $expr)) {
-                return null;
-            }
-            $a = 0;
-            $b = (int)$expr;
+            return false;
         }
 
-        return [$a, $b];
+        $parentId = $this->ensureParentIndex($parent);
+        $nodeId = spl_object_id($node);
+        $position = $this->parentIndexes[$parentId]['typePositions'][$nodeId] ?? 0;
+        return $position !== 0 && $position === ($this->parentIndexes[$parentId]['typeCounts'][$nodeName] ?? 0);
     }
 
     private function matchesNth(int $index, int $a, int $b): bool
@@ -970,54 +1209,65 @@ final class SelectorMatcher
         return $diff <= 0 && $diff % $a === 0;
     }
 
-    private function matchesNthChild($node, ?string $arg): bool
+    private function matchesNthChild($node, $parsed): bool
     {
         $parent = $node->parent ?? null;
-        if (!$parent) {
-            return false;
-        }
-        $parsed = $this->parseNthExpression($arg);
-        if ($parsed === null) {
+        if (!$parent || !is_array($parsed) || count($parsed) !== 2) {
             return false;
         }
         [$a, $b] = $parsed;
-        $elements = $this->getElementChildren($parent);
-        foreach ($elements as $i => $child) {
-            if ($child === $node) {
-                return $this->matchesNth($i + 1, $a, $b);
+        if ($this->standalone) {
+            $position = 0;
+            foreach ($parent->children ?? [] as $child) {
+                if (!$this->isElementChild($child)) {
+                    continue;
+                }
+                $position += 1;
+                if ($child === $node) {
+                    return $this->matchesNth($position, $a, $b);
+                }
             }
-        }
-        return false;
-    }
-
-    private function matchesNthOfType($node, ?string $arg): bool
-    {
-        $parent = $node->parent ?? null;
-        if (!$parent) {
             return false;
         }
-        $parsed = $this->parseNthExpression($arg);
-        if ($parsed === null) {
+
+        $parentId = $this->ensureParentIndex($parent);
+        $position = $this->parentIndexes[$parentId]['positions'][spl_object_id($node)] ?? 0;
+        return $position !== 0 && $this->matchesNth($position, $a, $b);
+    }
+
+    private function matchesNthOfType($node, $parsed): bool
+    {
+        $parent = $node->parent ?? null;
+        if (!$parent || !is_array($parsed) || count($parsed) !== 2) {
             return false;
         }
         [$a, $b] = $parsed;
         $nodeName = strtolower((string)$node->name);
-        $typeIndex = 0;
-        foreach ($this->getElementChildren($parent) as $child) {
-            if (strtolower((string)$child->name) === $nodeName) {
-                $typeIndex += 1;
-                if ($child === $node) {
-                    return $this->matchesNth($typeIndex, $a, $b);
+        if ($this->standalone) {
+            $position = 0;
+            foreach ($parent->children ?? [] as $child) {
+                if ($this->isElementChild($child) && strtolower((string)$child->name) === $nodeName) {
+                    $position += 1;
+                    if ($child === $node) {
+                        return $this->matchesNth($position, $a, $b);
+                    }
                 }
             }
+            return false;
         }
-        return false;
+
+        $parentId = $this->ensureParentIndex($parent);
+        $position = $this->parentIndexes[$parentId]['typePositions'][spl_object_id($node)] ?? 0;
+        return $position !== 0 && $this->matchesNth($position, $a, $b);
     }
 }
 
 final class Selector
 {
     private static ?SelectorMatcher $matcher = null;
+    /** @var array<string|int, mixed> */
+    private static array $parseCache = [];
+    private const PARSE_CACHE_LIMIT = 128;
 
     public static function parseSelector(string $selector)
     {
@@ -1032,30 +1282,65 @@ final class Selector
 
     public static function query($root, string $selector): array
     {
-        $parsed = self::parseSelector($selector);
-        $fast = self::fastQuery($root, $parsed);
-        if ($fast !== null) {
-            return $fast;
+        $parsed = self::cachedSelector($selector);
+        $matcher = self::matcher();
+        $matcher->beginOperation(false);
+        try {
+            $fast = self::fastQuery($root, $parsed);
+            if ($fast !== null) {
+                return $fast;
+            }
+            $results = [];
+            self::queryDescendants($root, $parsed, $results);
+            return $results;
+        } finally {
+            $matcher->releaseOperation();
         }
-        $results = [];
-        self::queryDescendants($root, $parsed, $results);
-        return $results;
     }
 
     public static function queryFirst($root, string $selector)
     {
-        $parsed = self::parseSelector($selector);
-        $fast = self::fastQueryFirst($root, $parsed);
-        if ($fast !== null) {
-            return $fast;
+        $parsed = self::cachedSelector($selector);
+        $matcher = self::matcher();
+        $matcher->beginOperation(false);
+        try {
+            [$handled, $fastResult] = self::fastQueryFirst($root, $parsed);
+            if ($handled) {
+                return $fastResult;
+            }
+            return self::queryFirstDescendant($root, $parsed);
+        } finally {
+            $matcher->releaseOperation();
         }
-        return self::queryFirstDescendant($root, $parsed);
     }
 
     public static function matches($node, string $selector): bool
     {
-        $parsed = self::parseSelector($selector);
-        return self::matcher()->matches($node, $parsed);
+        $parsed = self::cachedSelector($selector);
+        $matcher = self::matcher();
+        $matcher->beginOperation(true);
+        try {
+            return $matcher->matches($node, $parsed);
+        } finally {
+            $matcher->releaseOperation();
+        }
+    }
+
+    private static function cachedSelector(string $selector)
+    {
+        $key = trim($selector);
+        if (array_key_exists($key, self::$parseCache)) {
+            return self::$parseCache[$key];
+        }
+        $parsed = self::parseSelector($key);
+        if (count(self::$parseCache) >= self::PARSE_CACHE_LIMIT) {
+            $oldest = array_key_first(self::$parseCache);
+            if ($oldest !== null) {
+                unset(self::$parseCache[$oldest]);
+            }
+        }
+        self::$parseCache[$key] = $parsed;
+        return $parsed;
     }
 
     private static function matcher(): SelectorMatcher
@@ -1098,7 +1383,8 @@ final class Selector
         return null;
     }
 
-    private static function fastQueryFirst($root, $selector)
+    /** @return array{0:bool,1:mixed} */
+    private static function fastQueryFirst($root, $selector): array
     {
         if ($selector instanceof SelectorComplex) {
             $parts = $selector->parts;
@@ -1106,22 +1392,22 @@ final class Selector
                 $compound = $parts[0][1];
                 $id = self::compoundIdOnly($compound);
                 if ($id !== null) {
-                    return self::queryFirstDescendantById($root, $id);
+                    return [true, self::queryFirstDescendantById($root, $id)];
                 }
                 $tag = self::compoundTagOnly($compound);
                 if ($tag !== null) {
-                    return self::queryFirstDescendantByTag($root, $tag);
+                    return [true, self::queryFirstDescendantByTag($root, $tag)];
                 }
             }
             if (count($parts) === 2 && $parts[1][0] === ' ') {
                 $id = self::compoundIdOnly($parts[0][1]);
                 $tag = self::compoundTagOnly($parts[1][1]);
                 if ($id !== null && $tag !== null) {
-                    return self::queryFirstDescendantByIdTag($root, $id, $tag, false, false);
+                    return [true, self::queryFirstDescendantByIdTag($root, $id, $tag, false, false)];
                 }
             }
         }
-        return null;
+        return [false, null];
     }
 
     private static function compoundIdOnly(SelectorCompound $compound): ?string
@@ -1258,7 +1544,10 @@ final class Selector
         }
 
         if ($node instanceof ElementNode && $node->templateContent !== null) {
-            self::queryDescendantsByIdTag($node->templateContent, $id, $tag, $results, $nextInside, true);
+            // Template contents are a separate document fragment; the
+            // template element and its ancestors are not ancestors of nodes
+            // inside that fragment.
+            self::queryDescendantsByIdTag($node->templateContent, $id, $tag, $results, false, true);
         }
     }
 
@@ -1290,7 +1579,7 @@ final class Selector
         }
 
         if ($node instanceof ElementNode && $node->templateContent !== null) {
-            return self::queryFirstDescendantByIdTag($node->templateContent, $id, $tag, $nextInside, true);
+            return self::queryFirstDescendantByIdTag($node->templateContent, $id, $tag, false, true);
         }
 
         return null;

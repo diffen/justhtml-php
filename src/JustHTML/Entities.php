@@ -7,6 +7,10 @@ namespace JustHTML;
 final class Entities
 {
     private const REPLACEMENT_CHAR = "\u{FFFD}";
+    // Longest key in data/entities.php is CounterClockwiseContourIntegral.
+    // Once this many name characters have been inspected, no longer named
+    // character reference can possibly match.
+    private const MAX_NAMED_ENTITY_LENGTH = 31;
 
     /** @var array<string, string>|null */
     private static ?array $namedEntities = null;
@@ -203,29 +207,6 @@ final class Entities
         return $data;
     }
 
-    private static function codepointToUtf8(int $codepoint): string
-    {
-        if ($codepoint <= 0x7F) {
-            return chr($codepoint);
-        }
-        if ($codepoint <= 0x7FF) {
-            return chr(0xC0 | ($codepoint >> 6))
-                . chr(0x80 | ($codepoint & 0x3F));
-        }
-        if ($codepoint <= 0xFFFF) {
-            return chr(0xE0 | ($codepoint >> 12))
-                . chr(0x80 | (($codepoint >> 6) & 0x3F))
-                . chr(0x80 | ($codepoint & 0x3F));
-        }
-        if ($codepoint <= 0x10FFFF) {
-            return chr(0xF0 | ($codepoint >> 18))
-                . chr(0x80 | (($codepoint >> 12) & 0x3F))
-                . chr(0x80 | (($codepoint >> 6) & 0x3F))
-                . chr(0x80 | ($codepoint & 0x3F));
-        }
-        return self::REPLACEMENT_CHAR;
-    }
-
     public static function decodeNumericEntity(string $text, bool $isHex = false): string
     {
         $base = $isHex ? 16 : 10;
@@ -272,7 +253,7 @@ final class Entities
             return self::REPLACEMENT_CHAR;
         }
 
-        return self::codepointToUtf8($codepoint);
+        return Str::codepointToUtf8($codepoint);
     }
 
     public static function decodeEntitiesInText(string $text, bool $inAttribute = false): string
@@ -348,7 +329,8 @@ final class Entities
                 continue;
             }
 
-            while ($j < $length) {
+            $nameLimit = min($length, $i + 1 + self::MAX_NAMED_ENTITY_LENGTH);
+            while ($j < $nameLimit) {
                 $ch = $text[$j];
                 if (!(($ch >= 'a' && $ch <= 'z')
                     || ($ch >= 'A' && $ch <= 'Z')

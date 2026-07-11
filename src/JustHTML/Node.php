@@ -41,8 +41,17 @@ class SimpleDomNode
     public function appendChild($node): void
     {
         if ($this->children !== null) {
+            $this->assertCanInsert($node);
+            self::detachFromParent($node);
             $this->children[] = $node;
             $node->parent = $this;
+        }
+    }
+
+    private static function detachFromParent($node): void
+    {
+        if (($node->parent ?? null) !== null) {
+            $node->parent->removeChild($node);
         }
     }
 
@@ -74,6 +83,19 @@ class SimpleDomNode
             throw new \RuntimeException('Reference node is not a child of this node');
         }
 
+        if ($node === $referenceNode) {
+            return;
+        }
+
+        $this->assertCanInsert($node);
+        self::detachFromParent($node);
+
+        // Detaching a sibling that precedes the reference changes its index.
+        $index = array_search($referenceNode, $this->children, true);
+        if ($index === false) {
+            throw new \RuntimeException('Reference node is not a child of this node');
+        }
+
         array_splice($this->children, (int)$index, 0, [$node]);
         $node->parent = $this;
     }
@@ -89,10 +111,56 @@ class SimpleDomNode
             throw new \RuntimeException('The node to be replaced is not a child of this node');
         }
 
+        if ($newNode === $oldNode) {
+            return $oldNode;
+        }
+
+        $this->assertCanInsert($newNode);
+        self::detachFromParent($newNode);
+
+        // Detaching another child of this node may shift the old node.
+        $index = array_search($oldNode, $this->children, true);
+        if ($index === false) {
+            throw new \RuntimeException('The node to be replaced is not a child of this node');
+        }
+
         $this->children[$index] = $newNode;
         $newNode->parent = $this;
         $oldNode->parent = null;
         return $oldNode;
+    }
+
+    private function assertCanInsert($node): void
+    {
+        if (!is_object($node) || !property_exists($node, 'parent')) {
+            throw new \InvalidArgumentException('Child node must be a DOM node');
+        }
+
+        if ($node === $this) {
+            throw new \RuntimeException('Cannot insert a node into itself or one of its descendants');
+        }
+
+        // Newly constructed leaves cannot contain the target. This is the
+        // parser's hot path and avoids walking the open-element ancestry.
+        if (($node->parent ?? null) === null && empty($node->children ?? null)) {
+            return;
+        }
+
+        // A descendant may move upward, but an ancestor cannot become a child
+        // of itself or one of its descendants.
+        $ancestor = $this;
+        $seen = [];
+        while ($ancestor !== null) {
+            if ($ancestor === $node) {
+                throw new \RuntimeException('Cannot insert a node into itself or one of its descendants');
+            }
+            $id = spl_object_id($ancestor);
+            if (isset($seen[$id])) {
+                throw new \RuntimeException('Cannot insert into a cyclic node hierarchy');
+            }
+            $seen[$id] = true;
+            $ancestor = $ancestor->parent ?? null;
+        }
     }
 
     public function hasChildNodes(): bool

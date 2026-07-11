@@ -171,7 +171,7 @@ foreach (Stream::stream($html) as [$event, $data]) {
 ```
 
 Example timing for extracting the first non-empty paragraph under `#mw-content-text` on the Wikipedia fixture
-(PHP 8.5.1, 5-run average): streaming ~13 ms vs full parser ~120 ms.
+(PHP 8.5.8, 5-run average): streaming ~24 ms vs full parser ~172 ms.
 Your results will vary. For deeper explanations and examples, see [Streaming.md](Streaming.md).
 
 ## CLI
@@ -227,19 +227,19 @@ fixture set (avg ms/doc: lower is better). Generate fixtures with
 `php benchmarks/fetch_commoncrawl.php` and run with
 `--dir benchmarks/fixtures/commoncrawl-1k --iterations 3`.
 
-Benchmarks here were run on PHP 8.5.1 with libxml 2.9.13. Run
+Benchmarks here were run on PHP 8.5.8 with libxml 2.9.13. Run
 `php benchmarks/correctness.php --markdown` and
 `php benchmarks/performance.php --dir benchmarks/fixtures/commoncrawl-1k --iterations 3 --markdown`
 to regenerate.
 
 | Parser | Spec compliance (html5lib-tests pass rate) | Speed: Avg ms/doc (lower is better) | Selectors | Notes |
 |--------|---------------------------------------------|------------------------------------:|-----------|-------|
-| **JustHTML** | 1743/1743 (**100%**) | 7.3 | CSS | Full spec compliance |
-| DOM\HTMLDocument | 831/1743 (47.7%) | **0.8** | CSS | PHP built-in DOM extension (DOM\\HTMLDocument; HTML5 parser in PHP 8.4+, C implementation) |
-| DOMDocument (libxml) | 54/1743 (3.1%) | 1.2 | XPath | Legacy HTML parser (libxml2), not HTML5-correct |
-| masterminds/html5 | 75/1743 (4.3%) | 5.8 | XPath | HTML5 parser, low compliance |
-| voku/simple_html_dom | 29/1743 (1.7%) | 5.0 | CSS | Lenient DOM wrapper, low compliance |
-| symfony/dom-crawler | 54/1743 (3.1%) | 5.5 | CSS/XPath | Wrapper over DOMDocument (libxml) |
+| **JustHTML** | 1770/1770 (**100%**) | 12.6 | CSS | Full spec compliance |
+| DOM\HTMLDocument | 873/1770 (49.3%) | **0.5** | CSS | PHP built-in DOM extension (DOM\\HTMLDocument; HTML5 parser in PHP 8.4+, C implementation) |
+| DOMDocument (libxml) | 54/1770 (3.1%) | 0.8 | XPath | Legacy HTML parser (libxml2), not HTML5-correct |
+| masterminds/html5 | 75/1770 (4.2%) | 9.9 | XPath | HTML5 parser, low compliance |
+| voku/simple_html_dom | 29/1770 (1.6%) | 2.1 | CSS | Lenient DOM wrapper, low compliance |
+| symfony/dom-crawler | 54/1770 (3.1%) | 9.8 | CSS/XPath | Wrapper over DOMDocument (libxml) |
 
 See `benchmarks/README.md` for parser install instructions and details.
 
@@ -252,17 +252,17 @@ from `examples/fixtures/wikipedia-earth.html`:
 php benchmarks/lead_paragraph.php --iterations 5 --markdown
 ```
 
-Example results (PHP 8.4.16, 5-run average; all outputs match the JustHTML baseline):
+Example results (PHP 8.5.8, 5-run average; all outputs match the JustHTML baseline):
 
 | Parser | Average time (milliseconds) | Total time (seconds) | Iterations |
 |--------|----------------------------:|---------------------:|-----------:|
-| **JustHTML** | 98.72 | 0.49 | 5 |
-| **JustHTML (stream)** | 11.44 | **0.06** | 5 |
-| DOM\HTMLDocument | 12.21 | **0.06** | 5 |
-| DOMDocument (libxml) | 15.97 | 0.08 | 5 |
-| masterminds/html5 | 74.73 | 0.37 | 5 |
-| voku/simple_html_dom | 353.01 | 1.77 | 5 |
-| symfony/dom-crawler | 73.05 | 0.37 | 5 |
+| **JustHTML** | 171.85 | 0.86 | 5 |
+| **JustHTML (stream)** | 23.55 | 0.12 | 5 |
+| DOM\HTMLDocument | 8.13 | **0.04** | 5 |
+| DOMDocument (libxml) | 10.09 | 0.05 | 5 |
+| masterminds/html5 | 134.06 | 0.67 | 5 |
+| voku/simple_html_dom | 115.06 | 0.58 | 5 |
+| symfony/dom-crawler | 143.08 | 0.72 | 5 |
 
 ## Tests
 

@@ -6,6 +6,128 @@ namespace JustHTML;
 
 final class Serialize
 {
+    private const RAW_TEXT_ELEMENTS = [
+        'script' => true,
+        'style' => true,
+        'xmp' => true,
+        'iframe' => true,
+        'noembed' => true,
+        'noframes' => true,
+        'plaintext' => true,
+    ];
+
+    // Pretty printing is only allowed in containers whose content model can
+    // safely contain block-level children. Phrasing and preformatted elements
+    // stay compact so indentation never becomes part of their text.
+    private const PRETTY_CONTAINERS = [
+        'address' => true,
+        'article' => true,
+        'aside' => true,
+        'blockquote' => true,
+        'body' => true,
+        'caption' => true,
+        'colgroup' => true,
+        'dd' => true,
+        'details' => true,
+        'dialog' => true,
+        'div' => true,
+        'dl' => true,
+        'dt' => true,
+        'fieldset' => true,
+        'figcaption' => true,
+        'figure' => true,
+        'footer' => true,
+        'form' => true,
+        'head' => true,
+        'header' => true,
+        'hgroup' => true,
+        'html' => true,
+        'li' => true,
+        'main' => true,
+        'menu' => true,
+        'nav' => true,
+        'noframes' => true,
+        'noscript' => true,
+        'ol' => true,
+        'search' => true,
+        'section' => true,
+        'table' => true,
+        'tbody' => true,
+        'td' => true,
+        'template' => true,
+        'tfoot' => true,
+        'th' => true,
+        'thead' => true,
+        'tr' => true,
+        'ul' => true,
+    ];
+
+    // Line breaks around these HTML elements do not alter inline phrasing.
+    private const BLOCK_ELEMENTS = [
+        'address' => true,
+        'article' => true,
+        'aside' => true,
+        'base' => true,
+        'basefont' => true,
+        'bgsound' => true,
+        'blockquote' => true,
+        'body' => true,
+        'caption' => true,
+        'col' => true,
+        'colgroup' => true,
+        'dd' => true,
+        'details' => true,
+        'dialog' => true,
+        'dir' => true,
+        'div' => true,
+        'dl' => true,
+        'dt' => true,
+        'fieldset' => true,
+        'figcaption' => true,
+        'figure' => true,
+        'footer' => true,
+        'form' => true,
+        'h1' => true,
+        'h2' => true,
+        'h3' => true,
+        'h4' => true,
+        'h5' => true,
+        'h6' => true,
+        'head' => true,
+        'header' => true,
+        'hgroup' => true,
+        'hr' => true,
+        'html' => true,
+        'legend' => true,
+        'li' => true,
+        'link' => true,
+        'main' => true,
+        'menu' => true,
+        'meta' => true,
+        'nav' => true,
+        'noframes' => true,
+        'noscript' => true,
+        'ol' => true,
+        'p' => true,
+        'pre' => true,
+        'script' => true,
+        'search' => true,
+        'section' => true,
+        'style' => true,
+        'summary' => true,
+        'table' => true,
+        'tbody' => true,
+        'td' => true,
+        'template' => true,
+        'tfoot' => true,
+        'th' => true,
+        'thead' => true,
+        'title' => true,
+        'tr' => true,
+        'ul' => true,
+        'xmp' => true,
+    ];
+
     private static function escapeText(?string $text): string
     {
         if ($text === null || $text === '') {
@@ -97,34 +219,30 @@ final class Serialize
 
     public static function toHtml($node, int $indent = 0, int $indentSize = 2, bool $pretty = true): string
     {
-        if ($node->name === '#document') {
-            $parts = [];
-            if (!empty($node->children)) {
-                foreach ($node->children as $child) {
-                    $parts[] = self::nodeToHtml($child, $indent, $indentSize, $pretty);
-                }
-            }
-            return $pretty ? implode("\n", $parts) : implode('', $parts);
-        }
-        return self::nodeToHtml($node, $indent, $indentSize, $pretty);
+        return self::nodeToHtml($node, $indent, $indentSize, $pretty, null, null);
     }
 
-    private static function nodeToHtml($node, int $indent, int $indentSize, bool $pretty): string
-    {
+    private static function nodeToHtml(
+        $node,
+        int $indent,
+        int $indentSize,
+        bool $pretty,
+        ?string $parentName,
+        ?string $parentNamespace
+    ): string {
         $prefix = $pretty ? str_repeat(' ', $indent * $indentSize) : '';
-        $newline = $pretty ? "\n" : '';
         $name = $node->name;
 
         if ($name === '#text') {
-            $text = $node->data ?? '';
-            if ($pretty) {
-                $text = trim($text);
-                if ($text === '') {
-                    return '';
-                }
-                return $prefix . self::escapeText($text);
+            $text = (string)($node->data ?? '');
+            if (
+                $parentName !== null
+                && self::isHtmlNamespace($parentNamespace)
+                && isset(self::RAW_TEXT_ELEMENTS[strtolower($parentName)])
+            ) {
+                return ($pretty ? $prefix : '') . $text;
             }
-            return self::escapeText($text);
+            return $prefix . self::escapeText($text);
         }
 
         if ($name === '#comment') {
@@ -132,56 +250,186 @@ final class Serialize
         }
 
         if ($name === '!doctype') {
-            return $prefix . '<!DOCTYPE html>';
+            return $prefix . self::serializeDoctype($node);
         }
 
-        if ($name === '#document-fragment') {
-            $parts = [];
-            if (!empty($node->children)) {
-                foreach ($node->children as $child) {
-                    $childHtml = self::nodeToHtml($child, $indent, $indentSize, $pretty);
-                    if ($childHtml !== '') {
-                        $parts[] = $childHtml;
-                    }
-                }
-            }
-            return $pretty ? implode($newline, $parts) : implode('', $parts);
+        if ($name === '#document' || $name === '#document-fragment') {
+            return self::serializeContainerChildren(
+                $node->children ?? [],
+                $indent,
+                $indentSize,
+                $pretty
+            );
         }
 
         $attrs = $node->attrs ?? [];
         $openTag = self::serializeStartTag($name, $attrs);
+        $namespace = $node->namespace ?? null;
+        $isHtml = self::isHtmlNamespace($namespace);
+        $htmlName = strtolower((string)$name);
 
-        if (isset(Constants::VOID_ELEMENTS[$name])) {
+        if ($isHtml && isset(Constants::VOID_ELEMENTS[$htmlName])) {
             return $prefix . $openTag;
         }
 
         $children = $node->children ?? [];
+        if (
+            $isHtml
+            && $htmlName === 'template'
+            && $node instanceof ElementNode
+            && $node->templateContent !== null
+        ) {
+            $children = $node->templateContent->children ?? [];
+        }
         if (!$children) {
             return $prefix . $openTag . self::serializeEndTag($name);
         }
 
-        $allText = true;
-        foreach ($children as $child) {
-            if ($child->name !== '#text') {
-                $allText = false;
-                break;
+        // The compact path never classifies or re-walks children.
+        if (!$pretty) {
+            $parts = [$openTag];
+            foreach ($children as $child) {
+                $parts[] = self::nodeToHtml($child, 0, $indentSize, false, $name, $namespace);
             }
+            $parts[] = self::serializeEndTag($name);
+            return implode('', $parts);
         }
 
-        if ($allText && $pretty) {
-            $text = $node->toText('', false);
-            return $prefix . $openTag . self::escapeText($text) . self::serializeEndTag($name);
+        $canFormat = $isHtml
+            && isset(self::PRETTY_CONTAINERS[$htmlName])
+            && self::canPrettyPrintChildren($children);
+        if (!$canFormat) {
+            $parts = [$prefix . $openTag];
+            foreach ($children as $child) {
+                $parts[] = self::nodeToHtml($child, 0, $indentSize, false, $name, $namespace);
+            }
+            $parts[] = self::serializeEndTag($name);
+            return implode('', $parts);
         }
 
         $parts = [$prefix . $openTag];
         foreach ($children as $child) {
-            $childHtml = self::nodeToHtml($child, $indent + 1, $indentSize, $pretty);
+            if ($child->name === '#text' && self::isFormattingWhitespace((string)($child->data ?? ''))) {
+                continue;
+            }
+            $childHtml = self::nodeToHtml(
+                $child,
+                $indent + 1,
+                $indentSize,
+                true,
+                $name,
+                $namespace
+            );
             if ($childHtml !== '') {
                 $parts[] = $childHtml;
             }
         }
         $parts[] = $prefix . self::serializeEndTag($name);
-        return $pretty ? implode($newline, $parts) : implode('', $parts);
+        return implode("\n", $parts);
+    }
+
+    /** @param array<int, mixed> $children */
+    private static function serializeContainerChildren(
+        array $children,
+        int $indent,
+        int $indentSize,
+        bool $pretty
+    ): string {
+        if (!$children) {
+            return '';
+        }
+
+        $canFormat = $pretty && self::canPrettyPrintChildren($children);
+        $parts = [];
+        foreach ($children as $child) {
+            if (
+                $canFormat
+                && $child->name === '#text'
+                && self::isFormattingWhitespace((string)($child->data ?? ''))
+            ) {
+                continue;
+            }
+            $parts[] = self::nodeToHtml(
+                $child,
+                $canFormat ? $indent : 0,
+                $indentSize,
+                $canFormat,
+                null,
+                null
+            );
+        }
+        return $canFormat ? implode("\n", $parts) : implode('', $parts);
+    }
+
+    /** @param array<int, mixed> $children */
+    private static function canPrettyPrintChildren(array $children): bool
+    {
+        $hasStructuralChild = false;
+        foreach ($children as $child) {
+            $childName = (string)$child->name;
+            if ($childName === '#text') {
+                if (!self::isFormattingWhitespace((string)($child->data ?? ''))) {
+                    return false;
+                }
+                continue;
+            }
+            if ($childName === '#comment' || $childName === '!doctype') {
+                $hasStructuralChild = true;
+                continue;
+            }
+            if (isset($childName[0]) && $childName[0] === '#') {
+                return false;
+            }
+            if (
+                !self::isHtmlNamespace($child->namespace ?? null)
+                || !isset(self::BLOCK_ELEMENTS[strtolower($childName)])
+            ) {
+                return false;
+            }
+            $hasStructuralChild = true;
+        }
+        return $hasStructuralChild;
+    }
+
+    private static function isFormattingWhitespace(string $text): bool
+    {
+        return $text === '' || strspn($text, "\t\n\f\r ") === strlen($text);
+    }
+
+    private static function isHtmlNamespace(?string $namespace): bool
+    {
+        return $namespace === null || $namespace === 'html';
+    }
+
+    private static function serializeDoctype($node): string
+    {
+        $doctype = $node->data;
+        $name = $doctype instanceof Doctype && $doctype->name !== null ? $doctype->name : 'html';
+        $publicId = $doctype instanceof Doctype ? $doctype->publicId : null;
+        $systemId = $doctype instanceof Doctype ? $doctype->systemId : null;
+        $result = '<!DOCTYPE ' . $name;
+        if ($publicId !== null) {
+            $result .= ' PUBLIC ' . self::quoteDoctypeIdentifier($publicId);
+            if ($systemId !== null) {
+                $result .= ' ' . self::quoteDoctypeIdentifier($systemId);
+            }
+        } elseif ($systemId !== null) {
+            $result .= ' SYSTEM ' . self::quoteDoctypeIdentifier($systemId);
+        }
+        return $result . '>';
+    }
+
+    private static function quoteDoctypeIdentifier(string $value): string
+    {
+        $hasDoubleQuote = strpos($value, '"') !== false;
+        $hasSingleQuote = strpos($value, "'") !== false;
+        if ($hasDoubleQuote && $hasSingleQuote) {
+            throw new \InvalidArgumentException('Doctype identifiers cannot contain both quote characters');
+        }
+        if ($hasDoubleQuote) {
+            return "'" . $value . "'";
+        }
+        return '"' . $value . '"';
     }
 
     public static function toTestFormat($node, int $indent = 0): string

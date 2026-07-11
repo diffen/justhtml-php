@@ -55,6 +55,7 @@ class TreeBuilder
     /** @var array<int, int> */
     public array $template_modes;
     public ?int $tokenizer_state_override;
+    private bool $has_select_element;
 
     public function __construct(?FragmentContext $fragment_context = null, bool $iframe_srcdoc = false, bool $collect_errors = false)
     {
@@ -80,6 +81,7 @@ class TreeBuilder
         $this->pending_table_text = '';
         $this->template_modes = [];
         $this->tokenizer_state_override = null;
+        $this->has_select_element = false;
 
         if ($fragment_context !== null) {
             $root = $this->_create_element('html', null, []);
@@ -334,21 +336,42 @@ class TreeBuilder
             if ($root !== null) {
                 $context_elem = $this->fragment_context_element;
                 if ($context_elem !== null && $context_elem->parent === $root) {
-                    foreach (array_values($context_elem->children) as $child) {
-                        $context_elem->removeChild($child);
-                        $root->appendChild($child);
+                    $context_children = $context_elem->children ?? [];
+                    $context_elem->children = [];
+                    $root_children = [];
+                    foreach ($root->children ?? [] as $child) {
+                        if ($child !== $context_elem) {
+                            $root_children[] = $child;
+                        }
                     }
-                    $root->removeChild($context_elem);
+                    foreach ($context_children as $child) {
+                        $child->parent = $root;
+                        $root_children[] = $child;
+                    }
+                    $root->children = $root_children;
+                    $context_elem->parent = null;
                 }
-                foreach (array_values($root->children) as $child) {
-                    $root->removeChild($child);
-                    $this->document->appendChild($child);
+
+                $root_children = $root->children ?? [];
+                $root->children = [];
+                $document_children = [];
+                foreach ($this->document->children ?? [] as $child) {
+                    if ($child !== $root) {
+                        $document_children[] = $child;
+                    }
                 }
-                $this->document->removeChild($root);
+                foreach ($root_children as $child) {
+                    $child->parent = $this->document;
+                    $document_children[] = $child;
+                }
+                $this->document->children = $document_children;
+                $root->parent = null;
             }
         }
 
-        $this->_populate_selectedcontent($this->document);
+        if ($this->has_select_element) {
+            $this->_populate_selectedcontent($this->document);
+        }
 
         return $this->document;
     }
@@ -456,6 +479,9 @@ class TreeBuilder
 
     private function _insert_element(Tag $tag, bool $push, string $namespace = 'html')
     {
+        if ($namespace === 'html' && $tag->name === 'select') {
+            $this->has_select_element = true;
+        }
         if ($tag->name === 'template' && $namespace === 'html') {
             $node = new TemplateNode($tag->name, $tag->attrs, $namespace);
         } else {
@@ -761,17 +787,17 @@ class TreeBuilder
             return;
         }
         $marker = Constants::formatMarker();
+        $last_entry = $this->active_formatting[count($this->active_formatting) - 1];
+        if ($last_entry === $marker || in_array($last_entry['node'], $this->open_elements, true)) {
+            return;
+        }
+
         $openSet = [];
         if ($this->open_elements) {
             foreach ($this->open_elements as $node) {
                 $openSet[spl_object_id($node)] = true;
             }
         }
-        $last_entry = $this->active_formatting[count($this->active_formatting) - 1];
-        if ($last_entry === $marker || isset($openSet[spl_object_id($last_entry['node'])])) {
-            return;
-        }
-
         $index = count($this->active_formatting) - 1;
         while (true) {
             $index -= 1;

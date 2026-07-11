@@ -6,7 +6,16 @@ namespace JustHTML;
 
 final class StreamDummyNode
 {
-    public string $namespace = 'html';
+    public string $name;
+    public string $namespace;
+    public string $childMode;
+
+    public function __construct(string $name, string $namespace, string $childMode)
+    {
+        $this->name = $name;
+        $this->namespace = $namespace;
+        $this->childMode = $childMode;
+    }
 }
 
 final class StreamSink
@@ -22,12 +31,10 @@ final class StreamSink
             if ($token->kind === Tag::START) {
                 $attrs = $token->attrs ? $token->attrs : [];
                 $this->tokens[] = ['start', [$token->name, $attrs]];
-                $this->openElements[] = new StreamDummyNode();
+                $this->processStartTag($token->name, $attrs, $token->selfClosing);
             } else {
                 $this->tokens[] = ['end', $token->name];
-                if ($this->openElements) {
-                    array_pop($this->openElements);
-                }
+                $this->processEndTag($token->name);
             }
             return TokenSinkResult::Continue;
         }
@@ -44,6 +51,165 @@ final class StreamSink
         }
 
         return TokenSinkResult::Continue;
+    }
+
+    /** @param array<string, string|null> $attrs */
+    private function processStartTag(string $name, array $attrs, bool $selfClosing): void
+    {
+        $name = strtolower($name);
+        $htmlMode = $this->startTagUsesHtmlRules($name, $attrs);
+        $current = $this->currentNode();
+
+        if ($htmlMode) {
+            if ($name === 'svg') {
+                $namespace = 'svg';
+            } elseif ($name === 'math') {
+                $namespace = 'math';
+            } else {
+                $namespace = 'html';
+            }
+        } else {
+            $namespace = $current !== null ? $current->namespace : 'html';
+        }
+
+        $isHtmlVoid = $namespace === 'html' && isset(Constants::VOID_ELEMENTS[$name]);
+        $acknowledgeSelfClosing = $namespace !== 'html' && $selfClosing;
+        if ($isHtmlVoid || $acknowledgeSelfClosing) {
+            return;
+        }
+
+        if ($namespace === 'html' || $this->isHtmlIntegrationPoint($namespace, $name, $attrs)) {
+            $childMode = 'html';
+        } elseif ($this->isMathmlTextIntegrationPoint($namespace, $name)) {
+            $childMode = 'math-text';
+        } else {
+            $childMode = 'foreign';
+        }
+
+        $this->openElements[] = new StreamDummyNode($name, $namespace, $childMode);
+    }
+
+    /** @param array<string, string|null> $attrs */
+    private function startTagUsesHtmlRules(string $name, array $attrs): bool
+    {
+        $current = $this->currentNode();
+        if ($current === null || $current->namespace === 'html') {
+            return true;
+        }
+
+        if ($current->childMode === 'html') {
+            return true;
+        }
+        if ($current->childMode === 'math-text' && !in_array($name, ['mglyph', 'malignmark'], true)) {
+            return true;
+        }
+        if ($current->namespace === 'math' && $current->name === 'annotation-xml' && $name === 'svg') {
+            return true;
+        }
+
+        if ($this->isForeignBreakout($name, $attrs)) {
+            $this->popUntilHtmlOrIntegrationPoint();
+            return true;
+        }
+        return false;
+    }
+
+    private function processEndTag(string $name): void
+    {
+        $name = strtolower($name);
+        $count = count($this->openElements);
+        if ($count === 0) {
+            return;
+        }
+
+        // Well-formed input takes this constant-time path.
+        if ($this->openElements[$count - 1]->name === $name) {
+            array_pop($this->openElements);
+            return;
+        }
+
+        $topIsHtml = $this->openElements[$count - 1]->namespace === 'html';
+        if (!$topIsHtml && ($name === 'br' || $name === 'p')) {
+            $this->popUntilHtmlOrIntegrationPoint();
+            $count = count($this->openElements);
+            if ($count === 0) {
+                return;
+            }
+            $topIsHtml = $this->openElements[$count - 1]->namespace === 'html';
+        }
+
+        for ($i = $count - 2; $i >= 0; $i--) {
+            $nodeIsHtml = $this->openElements[$i]->namespace === 'html';
+            if ($nodeIsHtml !== $topIsHtml) {
+                return;
+            }
+            if ($this->openElements[$i]->name === $name) {
+                array_splice($this->openElements, $i);
+                return;
+            }
+        }
+    }
+
+    private function currentNode(): ?StreamDummyNode
+    {
+        if (!$this->openElements) {
+            return null;
+        }
+        return $this->openElements[count($this->openElements) - 1];
+    }
+
+    private function popUntilHtmlOrIntegrationPoint(): void
+    {
+        while ($this->openElements) {
+            $current = $this->currentNode();
+            if ($current === null || $current->namespace === 'html' || $current->childMode === 'html') {
+                return;
+            }
+            array_pop($this->openElements);
+        }
+    }
+
+    /** @param array<string, string|null> $attrs */
+    private function isHtmlIntegrationPoint(string $namespace, string $name, array $attrs): bool
+    {
+        if ($namespace === 'math' && $name === 'annotation-xml') {
+            $encoding = '';
+            foreach ($attrs as $attrName => $attrValue) {
+                if (strtolower((string)$attrName) === 'encoding') {
+                    $encoding = strtolower((string)$attrValue);
+                    break;
+                }
+            }
+            return $encoding === 'text/html' || $encoding === 'application/xhtml+xml';
+        }
+
+        $canonicalName = $name;
+        if ($namespace === 'svg' && isset(Constants::SVG_TAG_NAME_ADJUSTMENTS[$name])) {
+            $canonicalName = Constants::SVG_TAG_NAME_ADJUSTMENTS[$name];
+        }
+        return isset(Constants::HTML_INTEGRATION_POINT_SET[$namespace . '|' . $canonicalName]);
+    }
+
+    private function isMathmlTextIntegrationPoint(string $namespace, string $name): bool
+    {
+        return isset(Constants::MATHML_TEXT_INTEGRATION_POINT_SET[$namespace . '|' . $name]);
+    }
+
+    /** @param array<string, string|null> $attrs */
+    private function isForeignBreakout(string $name, array $attrs): bool
+    {
+        if (isset(Constants::FOREIGN_BREAKOUT_ELEMENTS[$name])) {
+            return true;
+        }
+        if ($name !== 'font') {
+            return false;
+        }
+        foreach ($attrs as $attrName => $_) {
+            if (in_array(strtolower((string)$attrName), ['color', 'face', 'size'], true)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public function processCharacters(string $data): void

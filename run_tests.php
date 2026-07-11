@@ -36,6 +36,7 @@ $required = [
     'TreeBuilder.php',
     'Encoding.php',
     'JustHTML.php',
+    'Stream.php',
 ];
 
 foreach ($required as $file) {
@@ -224,7 +225,7 @@ function run_tree_tests(string $dir, bool $show_failures = false, int $max_failu
     foreach ($files as $file) {
         $tests = parse_dat_file($file);
         foreach ($tests as $index => $test) {
-            if ($test['script_directive'] !== null) {
+            if ($test['script_directive'] === 'script-on') {
                 $skipped += 1;
                 continue;
             }
@@ -1260,6 +1261,65 @@ function run_selector_tests(bool $show_failures = false, int $max_failures = 0):
                 return $doc->queryFirst('#missing') === null;
             },
         ],
+        [
+            'name' => 'complex selector backtracking',
+            'run' => static function (): bool {
+                $doc = new JustHTML(
+                    '<div class="a"><div class="b"><div><div class="b"><span class="c"></span></div></div></div></div>'
+                );
+                return count($doc->query('.a > .b .c')) === 1;
+            },
+        ],
+        [
+            'name' => 'CSS identifier escapes',
+            'run' => static function (): bool {
+                $doc = new JustHTML('<div class="foo:bar 123"></div>');
+                return count($doc->query('.foo\\:bar')) === 1
+                    && count($doc->query('.\\31 23')) === 1
+                    && count($doc->query('\\64 iv')) === 1;
+            },
+        ],
+        [
+            'name' => 'CSS escape edge cases',
+            'run' => static function (): bool {
+                $doc = new JustHTML(
+                    '<main><div data=")" class="foo) 123"></div><div data="ab"></div></main>'
+                );
+                return count($doc->query("[data=\"a\\\nb\"]")) === 1
+                    && count($doc->query(".\\31\r\n23")) === 1
+                    && count($doc->query('div:not([data=")"])')) === 1
+                    && count($doc->query('div:not(.foo\\))')) === 1;
+            },
+        ],
+        [
+            'name' => 'template selector boundary consistency',
+            'run' => static function (): bool {
+                $doc = new JustHTML('<template id="x" class="x"><span></span></template>');
+                return count($doc->query('#x span')) === 0
+                    && count($doc->query('.x span')) === 0
+                    && count($doc->query('template#x span')) === 0
+                    && count($doc->query('span')) === 1;
+            },
+        ],
+        [
+            'name' => 'structural pseudo classes',
+            'run' => static function (): bool {
+                $doc = new JustHTML('<ul><li id="a"></li><li></li><li id="c"></li><li></li></ul>');
+                $odd = $doc->query('li:nth-child(2n+1)');
+                return count($odd) === 2
+                    && ($odd[0]->attrs['id'] ?? '') === 'a'
+                    && ($odd[1]->attrs['id'] ?? '') === 'c'
+                    && count($doc->query('li:first-child')) === 1
+                    && count($doc->query('li:last-of-type')) === 1;
+            },
+        ],
+        [
+            'name' => 'empty rejects whitespace text',
+            'run' => static function (): bool {
+                $doc = new JustHTML('<main><div> </div><div></div></main>');
+                return count($doc->query('main > div:empty')) === 1;
+            },
+        ],
     ];
 
     $passed = 0;
@@ -1293,17 +1353,241 @@ function run_selector_tests(bool $show_failures = false, int $max_failures = 0):
     return [$passed, $passed + $failed];
 }
 
-function run_all(bool $show_failures = false, int $max_failures = 0): void
+function run_api_regression_tests(bool $show_failures = false): array
+{
+    $tests = [
+        'template and raw-text serialization' => static function (): bool {
+            $doc = new JustHTML('<template><b>x</b></template><script>if (a < b && c > d) {}</script>');
+            $html = $doc->toHtml(false);
+            return strpos($html, '<template><b>x</b></template>') !== false
+                && strpos($html, '<script>if (a < b && c > d) {}</script>') !== false;
+        },
+        'pretty mixed content preservation' => static function (): bool {
+            $doc = new JustHTML('<p>a <em>b</em> c</p>');
+            return strpos($doc->toHtml(), '<p>a <em>b</em> c</p>') !== false;
+        },
+        'pretty inline element text preservation' => static function (): bool {
+            $doc = new JustHTML('<p><em>a</em><em>b</em></p>');
+            $html = $doc->toHtml();
+            $roundtrip = new JustHTML($html);
+            $paragraph = $roundtrip->queryFirst('p');
+            return $paragraph !== null && $paragraph->toText('', false) === 'ab';
+        },
+        'foreign namespace serialization' => static function (): bool {
+            $doc = new JustHTML(
+                '<svg><script><![CDATA[<g></g>]]></script><source><circle></circle></source></svg>'
+            );
+            $roundtrip = new JustHTML($doc->toHtml(false));
+            return $roundtrip->toTestFormat() === $doc->toTestFormat();
+        },
+        'doctype serialization' => static function (): bool {
+            $doc = new JustHTML('<!DOCTYPE HTML PUBLIC "example" "about:legacy-compat"><p>x</p>');
+            return strpos($doc->toHtml(false), '<!DOCTYPE html PUBLIC "example" "about:legacy-compat">') === 0;
+        },
+        'unrepresentable doctype rejected' => static function (): bool {
+            $node = new \JustHTML\SimpleDomNode(
+                '!doctype',
+                null,
+                new Doctype('html', 'a"b\'c', null)
+            );
+            try {
+                $node->toHtml(0, 2, false);
+            } catch (\InvalidArgumentException $e) {
+                return true;
+            }
+            return false;
+        },
+        'DOM node move' => static function (): bool {
+            $doc = new JustHTML('<main><div><i>x</i></div><section></section></main>');
+            $div = $doc->queryFirst('div');
+            $section = $doc->queryFirst('section');
+            $child = $doc->queryFirst('i');
+            $section->appendChild($child);
+            return count($div->children) === 0
+                && count($section->children) === 1
+                && $child->parent === $section;
+        },
+        'invalid DOM move is atomic' => static function (): bool {
+            $first = new \JustHTML\SimpleDomNode('first');
+            $second = new \JustHTML\SimpleDomNode('second');
+            $child = new \JustHTML\SimpleDomNode('child');
+            $reference = new \JustHTML\SimpleDomNode('reference');
+            $missing = new \JustHTML\SimpleDomNode('missing');
+            $first->appendChild($child);
+            $second->appendChild($reference);
+            try {
+                $second->insertBefore($child, $missing);
+            } catch (\RuntimeException $e) {
+                return count($first->children) === 1
+                    && $first->children[0] === $child
+                    && $child->parent === $first
+                    && count($second->children) === 1;
+            }
+            return false;
+        },
+        'invalid DOM replacement is atomic' => static function (): bool {
+            $first = new \JustHTML\SimpleDomNode('first');
+            $second = new \JustHTML\SimpleDomNode('second');
+            $incoming = new \JustHTML\SimpleDomNode('incoming');
+            $existing = new \JustHTML\SimpleDomNode('existing');
+            $missing = new \JustHTML\SimpleDomNode('missing');
+            $first->appendChild($incoming);
+            $second->appendChild($existing);
+            try {
+                $second->replaceChild($incoming, $missing);
+            } catch (\RuntimeException $e) {
+                if (count($first->children) !== 1
+                    || $first->children[0] !== $incoming
+                    || $incoming->parent !== $first
+                    || $second->children[0] !== $existing
+                ) {
+                    return false;
+                }
+                try {
+                    $second->replaceChild($incoming, $incoming);
+                } catch (\RuntimeException $identityError) {
+                    return true;
+                }
+            }
+            return false;
+        },
+        'stream SVG CDATA' => static function (): bool {
+            $events = iterator_to_array(\JustHTML\Stream::stream('<svg><![CDATA[x<y]]></svg>'));
+            return isset($events[1]) && $events[1] === ['text', 'x<y'];
+        },
+        'stream integration-point CDATA' => static function (): bool {
+            $svg = iterator_to_array(\JustHTML\Stream::stream(
+                '<svg><foreignObject><![CDATA[x<y]]></foreignObject></svg>'
+            ));
+            $math = iterator_to_array(\JustHTML\Stream::stream(
+                '<math><mi><![CDATA[x<y]]></mi></math>'
+            ));
+            return isset($svg[2], $math[2])
+                && $svg[2] === ['text', 'x<y']
+                && $math[2] === ['text', 'x<y'];
+        },
+        'stream end-tag repair respects integration boundaries' => static function (): bool {
+            $events = iterator_to_array(\JustHTML\Stream::stream(
+                '<svg><foreignObject><div></svg></div></foreignObject><![CDATA[x]]></svg>'
+            ));
+            foreach ($events as $event) {
+                if ($event === ['text', 'x']) {
+                    return true;
+                }
+            }
+            return false;
+        },
+        'DOM integration-point raw text' => static function (): bool {
+            $doc = new JustHTML(
+                '<svg><foreignObject><script>if(a<b){c>d}</script></foreignObject></svg>'
+            );
+            $script = $doc->queryFirst('script');
+            return $script !== null && $script->toText('', false) === 'if(a<b){c>d}';
+        },
+        'fragment tokenizer states' => static function (): bool {
+            $title = new JustHTML('A&amp;B&#x43;', [
+                'fragment_context' => new FragmentContext('title', 'html'),
+            ]);
+            $xmp = new JustHTML('A<b>B</b>', [
+                'fragment_context' => new FragmentContext('xmp'),
+            ]);
+            return $title->root->toText('', false) === 'A&BC'
+                && count($xmp->query('b')) === 0
+                && $xmp->root->toText('', false) === 'A<b>B</b>';
+        },
+        'leading UTF-8 BOM discarded' => static function (): bool {
+            $doc = new JustHTML("\xEF\xBB\xBF<p>x</p>");
+            return $doc->root->toText('', false) === 'x';
+        },
+        'CR-only error positions' => static function (): bool {
+            $doc = new JustHTML("<div>\r<@>", ['collect_errors' => true]);
+            foreach ($doc->errors as $error) {
+                if ($error->line === 2) {
+                    return true;
+                }
+            }
+            return false;
+        },
+        'CRLF exact error position' => static function (): bool {
+            $doc = new JustHTML("<div/\r\n>", ['collect_errors' => true]);
+            foreach ($doc->errors as $error) {
+                if ($error->code === 'unexpected-character-after-solidus-in-tag') {
+                    return $error->line === 2 && $error->column === 1;
+                }
+            }
+            return false;
+        },
+        'CDATA EOF exact error position' => static function (): bool {
+            $sink = new class {
+                /** @var array<int, mixed> */
+                public array $openElements = [];
+                public function processToken($token): int
+                {
+                    return TokenSinkResult::Continue;
+                }
+                public function processCharacters(string $data): void
+                {
+                }
+            };
+            $opts = new TokenizerOpts(false, true, Tokenizer::CDATA_SECTION);
+            $tokenizer = new Tokenizer($sink, $opts, true);
+            $tokenizer->run("\n");
+            foreach ($tokenizer->errors as $error) {
+                if ($error->code === 'eof-in-cdata') {
+                    return $error->line === 2 && $error->column === 1;
+                }
+            }
+            return false;
+        },
+        'multibyte error columns count characters' => static function (): bool {
+            $doc = new JustHTML("é<@>", ['collect_errors' => true]);
+            foreach ($doc->errors as $error) {
+                if ($error->code === 'invalid-first-character-of-tag-name') {
+                    return $error->line === 1 && $error->column === 3;
+                }
+            }
+            return false;
+        },
+        'long invalid entity remains linear and unchanged' => static function (): bool {
+            $name = str_repeat('a', 2000);
+            $doc = new JustHTML('<p>&' . $name . ';</p>');
+            $paragraph = $doc->queryFirst('p');
+            return $paragraph !== null && $paragraph->toText('', false) === '&' . $name . ';';
+        },
+    ];
+
+    $passed = 0;
+    foreach ($tests as $name => $test) {
+        try {
+            if ($test()) {
+                $passed += 1;
+                continue;
+            }
+        } catch (\Throwable $e) {
+            if ($show_failures) {
+                echo "API regression failed: {$name} ({$e->getMessage()})\n";
+            }
+            continue;
+        }
+        if ($show_failures) {
+            echo "API regression failed: {$name}\n";
+        }
+    }
+    return [$passed, count($tests)];
+}
+
+function run_all(bool $show_failures = false, int $max_failures = 0): int
 {
     [$tree_passed, $tree_failed, $tree_skipped] = run_tree_tests(__DIR__ . '/html5lib-tests/tree-construction', $show_failures, $max_failures);
     [$tok_passed, $tok_total] = run_tokenizer_tests(__DIR__ . '/html5lib-tests/tokenizer', $show_failures, $max_failures);
     [$ser_passed, $ser_total, $ser_skipped] = run_serializer_tests(__DIR__ . '/html5lib-tests/serializer');
     [$enc_passed, $enc_total, $enc_skipped] = run_encoding_tests(__DIR__ . '/html5lib-tests/encoding');
     [$sel_passed, $sel_total] = run_selector_tests($show_failures, $max_failures);
+    [$api_passed, $api_total] = run_api_regression_tests($show_failures);
 
-    $total_passed = $tree_passed + $tok_passed + $ser_passed + $enc_passed + $sel_passed;
+    $total_passed = $tree_passed + $tok_passed + $ser_passed + $enc_passed + $sel_passed + $api_passed;
     $total_failed = $tree_failed + ($tok_total - $tok_passed) + ($ser_total - $ser_passed - $ser_skipped)
-        + ($enc_total - $enc_passed - $enc_skipped) + ($sel_total - $sel_passed);
+        + ($enc_total - $enc_passed - $enc_skipped) + ($sel_total - $sel_passed) + ($api_total - $api_passed);
     $total_skipped = $tree_skipped + $ser_skipped + $enc_skipped;
 
     echo "Tree tests: {$tree_passed} passed, {$tree_failed} failed, {$tree_skipped} skipped\n";
@@ -1311,7 +1595,9 @@ function run_all(bool $show_failures = false, int $max_failures = 0): void
     echo "Serializer tests: {$ser_passed} passed, " . ($ser_total - $ser_passed - $ser_skipped) . " failed, {$ser_skipped} skipped\n";
     echo "Encoding tests: {$enc_passed} passed, " . ($enc_total - $enc_passed - $enc_skipped) . " failed, {$enc_skipped} skipped\n";
     echo "Selector tests: {$sel_passed} passed, " . ($sel_total - $sel_passed) . " failed\n";
+    echo "API regressions: {$api_passed} passed, " . ($api_total - $api_passed) . " failed\n";
     echo "Total: {$total_passed} passed, {$total_failed} failed, {$total_skipped} skipped\n";
+    return $total_failed;
 }
 
 $args = array_slice($argv, 1);
@@ -1329,28 +1615,42 @@ $run_tokenizer = in_array('--tokenizer', $args, true);
 $run_serializer = in_array('--serializer', $args, true);
 $run_encoding = in_array('--encoding', $args, true);
 $run_selector = in_array('--selector', $args, true);
+$run_api = in_array('--api', $args, true);
 
-if ($run_tree || $run_tokenizer || $run_serializer || $run_encoding || $run_selector) {
+$failed = 0;
+if ($run_tree || $run_tokenizer || $run_serializer || $run_encoding || $run_selector || $run_api) {
     if ($run_tree) {
         [$tree_passed, $tree_failed, $tree_skipped] = run_tree_tests(__DIR__ . '/html5lib-tests/tree-construction', $show_failures, $max_failures);
         echo "Tree tests: {$tree_passed} passed, {$tree_failed} failed, {$tree_skipped} skipped\n";
+        $failed += $tree_failed;
     }
     if ($run_tokenizer) {
         [$tok_passed, $tok_total] = run_tokenizer_tests(__DIR__ . '/html5lib-tests/tokenizer', $show_failures, $max_failures);
         echo "Tokenizer tests: {$tok_passed} passed, " . ($tok_total - $tok_passed) . " failed\n";
+        $failed += $tok_total - $tok_passed;
     }
     if ($run_serializer) {
         [$ser_passed, $ser_total, $ser_skipped] = run_serializer_tests(__DIR__ . '/html5lib-tests/serializer');
         echo "Serializer tests: {$ser_passed} passed, " . ($ser_total - $ser_passed - $ser_skipped) . " failed, {$ser_skipped} skipped\n";
+        $failed += $ser_total - $ser_passed - $ser_skipped;
     }
     if ($run_encoding) {
         [$enc_passed, $enc_total, $enc_skipped] = run_encoding_tests(__DIR__ . '/html5lib-tests/encoding');
         echo "Encoding tests: {$enc_passed} passed, " . ($enc_total - $enc_passed - $enc_skipped) . " failed, {$enc_skipped} skipped\n";
+        $failed += $enc_total - $enc_passed - $enc_skipped;
     }
     if ($run_selector) {
         [$sel_passed, $sel_total] = run_selector_tests($show_failures, $max_failures);
         echo "Selector tests: {$sel_passed} passed, " . ($sel_total - $sel_passed) . " failed\n";
+        $failed += $sel_total - $sel_passed;
+    }
+    if ($run_api) {
+        [$api_passed, $api_total] = run_api_regression_tests($show_failures);
+        echo "API regressions: {$api_passed} passed, " . ($api_total - $api_passed) . " failed\n";
+        $failed += $api_total - $api_passed;
     }
 } else {
-    run_all($show_failures, $max_failures);
+    $failed = run_all($show_failures, $max_failures);
 }
+
+exit($failed > 0 ? 1 : 0);

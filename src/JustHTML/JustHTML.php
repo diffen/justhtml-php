@@ -58,12 +58,28 @@ final class JustHTML
         );
         $opts = $tokenizer_opts instanceof TokenizerOpts ? $tokenizer_opts : new TokenizerOpts();
 
-        if ($this->fragment_context !== null && $this->fragment_context->namespace === null) {
+        if (
+            $this->fragment_context !== null
+            && ($this->fragment_context->namespace === null || $this->fragment_context->namespace === 'html')
+        ) {
             $tag_name = strtolower($this->fragment_context->tagName);
-            if (in_array($tag_name, ['textarea', 'title', 'style'], true)) {
+            if ($tag_name === 'title' || $tag_name === 'textarea') {
+                $opts->initialState = Tokenizer::RCDATA;
+                // Fragment parsing has no emitted start-tag token, so an end
+                // tag matching the context element is not an appropriate end
+                // tag for the tokenizer.
+                $opts->initialRawtextTag = null;
+            } elseif (
+                $tag_name === 'script'
+                || $tag_name === 'style'
+                || $tag_name === 'xmp'
+                || $tag_name === 'iframe'
+                || $tag_name === 'noembed'
+                || $tag_name === 'noframes'
+            ) {
                 $opts->initialState = Tokenizer::RAWTEXT;
-                $opts->initialRawtextTag = $tag_name;
-            } elseif (in_array($tag_name, ['plaintext', 'script'], true)) {
+                $opts->initialRawtextTag = null;
+            } elseif ($tag_name === 'plaintext') {
                 $opts->initialState = Tokenizer::PLAINTEXT;
             }
         }

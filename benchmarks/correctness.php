@@ -198,7 +198,7 @@ function run_correctness(string $parser_name, string $dir, ?int $limit = null): 
     foreach ($files as $file) {
         $tests = parse_dat_file($file);
         foreach ($tests as $test) {
-            if ($test['script_directive'] !== null) {
+            if ($test['script_directive'] === 'script-on') {
                 $skipped += 1;
                 continue;
             }

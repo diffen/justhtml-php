@@ -966,8 +966,10 @@ trait TokenizerStates
         }
         if ($c === '>') {
             $this->currentTagSelfClosing = true;
-            $this->emitCurrentTag();
-            $this->state = self::DATA;
+            $switched = $this->emitCurrentTag();
+            if (!$switched) {
+                $this->state = self::DATA;
+            }
             return false;
         }
         $this->emitError('unexpected-character-after-solidus-in-tag');
@@ -2508,7 +2510,10 @@ trait TokenizerStates
             $pos += 1;
 
             if ($c === "\r") {
-                $this->ignoreLf = true;
+                if ($pos < $length && $buffer[$pos] === "\n") {
+                    $pos += 1;
+                }
+                $this->ignoreLf = false;
                 $this->currentChar = "\n";
                 $this->pos = $pos;
                 return "\n";
@@ -2589,8 +2594,7 @@ trait TokenizerStates
             return;
         }
         $name = $this->currentAttrName;
-        $attrs = $this->currentTagAttrs;
-        $isDuplicate = array_key_exists($name, $attrs);
+        $isDuplicate = array_key_exists($name, $this->currentTagAttrs);
         $this->currentAttrName = '';
         if ($isDuplicate) {
             $this->emitError('duplicate-attribute');
@@ -2603,8 +2607,7 @@ trait TokenizerStates
         if ($this->currentAttrValueHasAmp) {
             $value = Entities::decodeEntitiesInText($value, true);
         }
-        $attrs[$name] = $value;
-        $this->currentTagAttrs = $attrs;
+        $this->currentTagAttrs[$name] = $value;
         $this->currentAttrValue = '';
         $this->currentAttrValueHasAmp = false;
     }
@@ -2621,35 +2624,36 @@ trait TokenizerStates
         $tag->attrs = $attrs;
         $tag->selfClosing = $this->currentTagSelfClosing;
 
-        $switchedToRawtext = false;
         if ($this->currentTagKind === Tag::START) {
             $this->lastStartTagName = $name;
-            $needsRawtextCheck = isset(self::RAWTEXT_SWITCH_TAGS[$name]) || $name === 'plaintext';
-            if ($needsRawtextCheck) {
-                $stack = $this->sink->openElements ?? [];
-                $current = $stack ? $stack[count($stack) - 1] : null;
-                $namespace = $current ? $current->namespace : null;
-                if ($namespace === null || $namespace === 'html') {
-                    if (isset(self::RCDATA_ELEMENTS[$name])) {
-                        $this->state = self::RCDATA;
-                        $this->rawtextTagName = $name;
-                        $switchedToRawtext = true;
-                    } elseif (isset(self::RAWTEXT_SWITCH_TAGS[$name])) {
-                        $this->state = self::RAWTEXT;
-                        $this->rawtextTagName = $name;
-                        $switchedToRawtext = true;
-                    } else {
-                        $this->state = self::PLAINTEXT;
-                        $switchedToRawtext = true;
-                    }
-                }
-            }
         }
 
         $this->recordTokenPosition();
         $result = $this->sink->processToken($tag);
+        $switchedToRawtext = false;
         if ($result === TokenSinkResult::Plaintext) {
             $this->state = self::PLAINTEXT;
+            $switchedToRawtext = true;
+        } elseif (
+            $this->currentTagKind === Tag::START
+            && (isset(self::RAWTEXT_SWITCH_TAGS[$name]) || $name === 'plaintext')
+            && $this->currentStartTagIsHtmlElement($name)
+        ) {
+            // The tree builder decides whether a token at a foreign-content
+            // integration point creates an HTML element. Inspect the stack
+            // after it has processed the token instead of guessing from the
+            // previously-current element's namespace.
+            if (isset(self::RCDATA_ELEMENTS[$name])) {
+                $this->state = self::RCDATA;
+                $this->rawtextTagName = $name;
+            } elseif (isset(self::RAWTEXT_SWITCH_TAGS[$name])) {
+                // Script data uses the RAWTEXT entry state plus the script
+                // branches in stateRawtext/stateScriptData*.
+                $this->state = self::RAWTEXT;
+                $this->rawtextTagName = $name;
+            } else {
+                $this->state = self::PLAINTEXT;
+            }
             $switchedToRawtext = true;
         }
 
@@ -2659,6 +2663,26 @@ trait TokenizerStates
         $this->currentTagSelfClosing = false;
         $this->currentTagKind = Tag::START;
         return $switchedToRawtext;
+    }
+
+    private function currentStartTagIsHtmlElement(string $name): bool
+    {
+        if (!is_object($this->sink) || !property_exists($this->sink, 'openElements')) {
+            // Token-only sinks historically relied on the tokenizer's HTML
+            // default when they did not expose a parser stack.
+            return true;
+        }
+        $stack = $this->sink->openElements;
+        if (!is_array($stack)) {
+            return false;
+        }
+        if (!$stack) {
+            return true;
+        }
+        $current = $stack[count($stack) - 1];
+        $currentName = strtolower((string)($current->name ?? ''));
+        $namespace = $current->namespace ?? null;
+        return $currentName === $name && ($namespace === null || $namespace === 'html');
     }
 
     private function emitComment(): void
@@ -2697,14 +2721,9 @@ trait TokenizerStates
             return;
         }
         $pos = $this->pos;
-        $lastNewline = strrpos(substr($this->buffer, 0, $pos), "\n");
-        if ($lastNewline === false) {
-            $column = $pos;
-        } else {
-            $column = $pos - $lastNewline - 1;
-        }
-        $this->lastTokenLine = $this->getLineAtPos($pos);
-        $this->lastTokenColumn = $column;
+        [$line, $lineStart] = $this->positionAt($pos);
+        $this->lastTokenLine = $line;
+        $this->lastTokenColumn = $this->characterColumnAt($pos, $lineStart);
     }
 
     private function recordTextEndPosition(int $rawLen): void
@@ -2713,14 +2732,9 @@ trait TokenizerStates
             return;
         }
         $endPos = $this->textStartPos + $rawLen;
-        $lastNewline = strrpos(substr($this->buffer, 0, $endPos), "\n");
-        if ($lastNewline === false) {
-            $column = $endPos;
-        } else {
-            $column = $endPos - $lastNewline - 1;
-        }
-        $this->lastTokenLine = $this->getLineAtPos($endPos);
-        $this->lastTokenColumn = $column;
+        [$line, $lineStart] = $this->positionAt($endPos);
+        $this->lastTokenLine = $line;
+        $this->lastTokenColumn = $this->characterColumnAt($endPos, $lineStart);
     }
 
     private function emitError(string $code): void
@@ -2728,15 +2742,9 @@ trait TokenizerStates
         if (!$this->collectErrors) {
             return;
         }
-        $pos = max(0, $this->pos - 1);
-        $lastNewline = strrpos(substr($this->buffer, 0, $pos + 1), "\n");
-        if ($lastNewline === false) {
-            $column = $pos + 1;
-        } else {
-            $column = $pos - $lastNewline;
-        }
+        [$line, $lineStart] = $this->positionAt($this->pos);
+        $column = $this->characterColumnAt($this->pos, $lineStart);
         $message = Errors::generateErrorMessage($code);
-        $line = $this->getLineAtPos($this->pos);
         $this->errors[] = new ParseError($code, $line, $column, $message, $this->buffer);
     }
 

@@ -148,8 +148,8 @@ final class Tokenizer
     private Tag $tagToken;
     private CommentToken $commentToken;
 
-    /** @var array<int, int>|null */
-    private ?array $newlinePositions = null;
+    /** Byte offsets at which each logical source line starts. */
+    private ?array $lineStartPositions = null;
 
     public function __construct($sink, ?TokenizerOpts $opts = null, bool $collectErrors = false)
     {
@@ -230,8 +230,13 @@ final class Tokenizer
 
     public function initialize(?string $html): void
     {
-        if ($html !== null && $html !== '' && $html[0] === "\u{FEFF}" && $this->opts->discardBom) {
-            $html = substr($html, 1);
+        if (
+            $this->opts->discardBom
+            && $html !== null
+            && strlen($html) >= 3
+            && strncmp($html, "\xEF\xBB\xBF", 3) === 0
+        ) {
+            $html = substr($html, 3);
         }
 
         $this->buffer = $html ?? '';
@@ -272,34 +277,60 @@ final class Tokenizer
         }
 
         if ($this->collectErrors) {
-            $this->newlinePositions = [];
-            $pos = -1;
-            while (true) {
-                $pos = strpos($this->buffer, "\n", $pos + 1);
-                if ($pos === false) {
+            // strcspn does the long scans in C and does not allocate match
+            // arrays or substrings. Keep only one packed integer per line.
+            $this->lineStartPositions = [0];
+            $pos = 0;
+            while ($pos < $this->length) {
+                $pos += strcspn($this->buffer, "\r\n", $pos);
+                if ($pos >= $this->length) {
                     break;
                 }
-                $this->newlinePositions[] = $pos;
+                if ($this->buffer[$pos] === "\r" && $pos + 1 < $this->length && $this->buffer[$pos + 1] === "\n") {
+                    $pos += 2;
+                } else {
+                    $pos += 1;
+                }
+                $this->lineStartPositions[] = $pos;
             }
         } else {
-            $this->newlinePositions = null;
+            $this->lineStartPositions = null;
         }
     }
 
-    private function getLineAtPos(int $pos): int
+    /** @return array{0:int,1:int} line number and byte offset of its start */
+    private function positionAt(int $pos): array
     {
-        if ($this->newlinePositions === null) {
-            return 1;
+        if (!$this->lineStartPositions) {
+            return [1, 0];
         }
-        $count = 0;
-        foreach ($this->newlinePositions as $nl) {
-            if ($nl < $pos) {
-                $count++;
+
+        $pos = max(0, min($pos, $this->length));
+        $low = 0;
+        $high = count($this->lineStartPositions);
+        while ($low < $high) {
+            $mid = intdiv($low + $high, 2);
+            if ($this->lineStartPositions[$mid] <= $pos) {
+                $low = $mid + 1;
             } else {
-                break;
+                $high = $mid;
             }
         }
-        return $count + 1;
+        $index = max(0, $low - 1);
+        return [$index + 1, $this->lineStartPositions[$index]];
+    }
+
+    private function characterColumnAt(int $pos, int $lineStart): int
+    {
+        $pos = max($lineStart, min($pos, $this->length));
+        $column = 0;
+        for ($i = $lineStart; $i < $pos; $i++) {
+            // UTF-8 continuation bytes do not begin a new source character.
+            if ((ord($this->buffer[$i]) & 0xC0) !== 0x80) {
+                $column += 1;
+            }
+        }
+        return max(1, $column);
     }
 
     public function step(): bool
@@ -332,6 +363,9 @@ final class Tokenizer
 
     private function appendTextChunk(string $chunk, bool $endsWithCr = false): void
     {
+        if (strpos($chunk, "\r") !== false) {
+            $chunk = str_replace(["\r\n", "\r"], "\n", $chunk);
+        }
         $this->appendText($chunk);
         $this->ignoreLf = $endsWithCr;
     }
