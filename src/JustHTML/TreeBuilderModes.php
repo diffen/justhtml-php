@@ -1653,7 +1653,7 @@ trait TreeBuilderModes
                 $this->_parse_error('unexpected-end-tag', $name);
                 return null;
             }
-            if (in_array($name, ['caption', 'col', 'group', 'td', 'th'], true)) {
+            if (in_array($name, ['body', 'caption', 'col', 'colgroup', 'html', 'td', 'th'], true)) {
                 $this->_parse_error('unexpected-end-tag', $name);
                 return null;
             }

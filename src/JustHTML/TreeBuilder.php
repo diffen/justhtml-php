@@ -666,13 +666,19 @@ class TreeBuilder
         }
         $items = [];
         foreach ($attrs as $name => $value) {
-            $items[] = [$name, $value ?? ''];
+            // Numeric attribute names arrive as int array keys; normalize to
+            // strings so signatures can be compared strictly.
+            $items[] = [(string)$name, (string)($value ?? '')];
         }
         usort($items, static function ($a, $b) {
-            if ($a[0] === $b[0]) {
-                return $a[1] <=> $b[1];
+            // strcmp, not <=>: the spaceship operator compares numeric
+            // strings numerically ("10" <=> "1e1" is 0), which would make
+            // distinct signatures collide or sort unstably.
+            $nameCmp = strcmp($a[0], $b[0]);
+            if ($nameCmp !== 0) {
+                return $nameCmp;
             }
-            return $a[0] <=> $b[0];
+            return strcmp($a[1], $b[1]);
         });
         return $items;
     }
@@ -686,7 +692,7 @@ class TreeBuilder
                 $matches = [];
                 continue;
             }
-            if ($entry['name'] === $name && $entry['signature'] == $signature) {
+            if ($entry['name'] === $name && $entry['signature'] === $signature) {
                 $matches[] = $index;
             }
         }

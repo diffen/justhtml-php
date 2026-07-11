@@ -56,7 +56,9 @@ final class JustHTML
             $iframe_srcdoc,
             $should_collect
         );
-        $opts = $tokenizer_opts instanceof TokenizerOpts ? $tokenizer_opts : new TokenizerOpts();
+        // Clone so fragment-context adjustments below never leak into the
+        // caller's TokenizerOpts instance.
+        $opts = $tokenizer_opts instanceof TokenizerOpts ? clone $tokenizer_opts : new TokenizerOpts();
 
         if (
             $this->fragment_context !== null

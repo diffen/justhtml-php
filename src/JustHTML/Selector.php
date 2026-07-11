@@ -1375,7 +1375,11 @@ final class Selector
                 $tag = self::compoundTagOnly($parts[1][1]);
                 if ($id !== null && $tag !== null) {
                     $results = [];
-                    self::queryDescendantsByIdTag($root, $id, $tag, $results, false, false);
+                    // The id element may sit above the queried root; the
+                    // generic path walks real ancestor chains, so seed the
+                    // fast path with the same information.
+                    $insideId = self::hasAncestorWithId($root, $id);
+                    self::queryDescendantsByIdTag($root, $id, $tag, $results, $insideId, false);
                     return $results;
                 }
             }
@@ -1403,11 +1407,30 @@ final class Selector
                 $id = self::compoundIdOnly($parts[0][1]);
                 $tag = self::compoundTagOnly($parts[1][1]);
                 if ($id !== null && $tag !== null) {
-                    return [true, self::queryFirstDescendantByIdTag($root, $id, $tag, false, false)];
+                    $insideId = self::hasAncestorWithId($root, $id);
+                    return [true, self::queryFirstDescendantByIdTag($root, $id, $tag, $insideId, false)];
                 }
             }
         }
         return [false, null];
+    }
+
+    private static function hasAncestorWithId($node, string $id): bool
+    {
+        $ancestor = $node->parent ?? null;
+        while ($ancestor !== null) {
+            if (
+                property_exists($ancestor, 'name')
+                && !(isset($ancestor->name[0]) && $ancestor->name[0] === '#')
+            ) {
+                $attrs = $ancestor->attrs ?? [];
+                if (($attrs['id'] ?? '') === $id) {
+                    return true;
+                }
+            }
+            $ancestor = $ancestor->parent ?? null;
+        }
+        return false;
     }
 
     private static function compoundIdOnly(SelectorCompound $compound): ?string
