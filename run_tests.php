@@ -1320,6 +1320,34 @@ function run_selector_tests(bool $show_failures = false, int $max_failures = 0):
                 return count($doc->query('main > div:empty')) === 1;
             },
         ],
+        [
+            'name' => 'invalid functional pseudo classes throw',
+            'run' => static function (): bool {
+                $doc = new JustHTML('<div><p>x</p></div>');
+                foreach ([':not', ':not()', ':nth-child', ':nth-child()', ':nth-child(foo)', ':nth-of-type', ':nth-of-type()'] as $selector) {
+                    try {
+                        $doc->query($selector);
+                        return false;
+                    } catch (\JustHTML\SelectorError $e) {
+                        // Expected.
+                    }
+                }
+                return true;
+            },
+        ],
+        [
+            'name' => 'foreign selector case sensitivity',
+            'run' => static function (): bool {
+                $doc = new JustHTML('<DIV></DIV><svg viewBox="0 0 1 1"><linearGradient class="x"/></svg>');
+                return count($doc->query('DIV')) === 1
+                    && count($doc->query('linearGradient')) === 1
+                    && count($doc->query('lineargradient')) === 0
+                    && count($doc->query('linearGradient.x')) === 1
+                    && count($doc->query('lineargradient.x')) === 0
+                    && count($doc->query('svg[viewBox]')) === 1
+                    && count($doc->query('svg[viewbox]')) === 0;
+            },
+        ],
     ];
 
     $passed = 0;
@@ -1406,6 +1434,35 @@ function run_api_regression_tests(bool $show_failures = false): array
             return count($div->children) === 0
                 && count($section->children) === 1
                 && $child->parent === $section;
+        },
+        'leaf append throws atomically' => static function (): bool {
+            $parent = new \JustHTML\SimpleDomNode('div');
+            $child = new \JustHTML\TextNode('kept');
+            $comment = new \JustHTML\SimpleDomNode('#comment', null, 'comment');
+            $parent->appendChild($child);
+            try {
+                $comment->appendChild($child);
+            } catch (\RuntimeException $e) {
+                return $child->parent === $parent
+                    && count($parent->children) === 1
+                    && $parent->children[0] === $child;
+            }
+            return false;
+        },
+        'WHATWG legacy encoding labels' => static function (): bool {
+            [$shiftJis, $shiftJisName] = Encoding::decodeHtml("\x82\xA0", 'shift_jis');
+            [$gbk, $gbkName] = Encoding::decodeHtml("\xC4\xE3", 'gb2312');
+            [$userDefined, $userDefinedName] = Encoding::decodeHtml("\x80\xFF", 'x-user-defined');
+            [$metaName] = Encoding::sniffHtmlEncoding('<meta charset="shift_jis">');
+            [$metaUserDefined] = Encoding::sniffHtmlEncoding('<meta charset="x-user-defined">');
+            return $shiftJisName === 'shift_jis'
+                && $shiftJis === 'あ'
+                && $gbkName === 'gbk'
+                && $gbk === '你'
+                && $userDefinedName === 'x-user-defined'
+                && $userDefined === "\u{F780}\u{F7FF}"
+                && $metaName === 'shift_jis'
+                && $metaUserDefined === 'windows-1252';
         },
         'invalid DOM move is atomic' => static function (): bool {
             $first = new \JustHTML\SimpleDomNode('first');

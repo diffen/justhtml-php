@@ -7,6 +7,16 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-07-12
+
+- Expand byte decoding to WHATWG encoding labels and require the mbstring and
+  iconv backends explicitly; correct `x-user-defined` code points and cache
+  portable single-byte iconv translation tables.
+- Reject missing and malformed functional pseudo-class arguments with
+  `SelectorError`, including bare `:not` and `:nth-child`.
+- Preserve case-sensitive SVG/MathML type and attribute selector matching.
+- Throw on attempts to append children to comment and doctype nodes.
+
 ## [0.1.5] - 2026-07-11
 
 - Clone caller-supplied `TokenizerOpts` before fragment-context tokenizer

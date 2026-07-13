@@ -40,12 +40,14 @@ class SimpleDomNode
 
     public function appendChild($node): void
     {
-        if ($this->children !== null) {
-            $this->assertCanInsert($node);
-            self::detachFromParent($node);
-            $this->children[] = $node;
-            $node->parent = $this;
+        if ($this->children === null) {
+            throw new \RuntimeException("Node {$this->name} cannot have children");
         }
+
+        $this->assertCanInsert($node);
+        self::detachFromParent($node);
+        $this->children[] = $node;
+        $node->parent = $this;
     }
 
     private static function detachFromParent($node): void

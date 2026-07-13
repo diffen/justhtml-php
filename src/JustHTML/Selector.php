@@ -429,7 +429,7 @@ final class SelectorTokenizer
 
             if ($ch === '\\' || $this->isNameStart($ch)) {
                 $name = $this->readName();
-                $tokens[] = new SelectorToken(SelectorTokenType::TAG, strtolower($name));
+                $tokens[] = new SelectorToken(SelectorTokenType::TAG, $name);
                 continue;
             }
 
@@ -669,15 +669,23 @@ final class SelectorParser
             $this->expect(SelectorTokenType::PAREN_CLOSE);
             $pseudo = new SelectorSimple(SelectorSimple::TYPE_PSEUDO, $name, null, null, $arg);
             $lowerName = strtolower($name);
-            if ($lowerName === 'not' && $arg !== null && $arg !== '') {
+            if ($lowerName === 'not') {
+                if ($arg === null || trim($arg) === '') {
+                    throw new SelectorError(':not() requires a non-empty selector');
+                }
                 $pseudo->parsedArg = Selector::parseSelector($arg);
             } elseif ($lowerName === 'nth-child' || $lowerName === 'nth-of-type') {
-                // false is an intentional invalid-expression sentinel. It
-                // distinguishes an invalid An+B from an argument that has not
-                // been parsed and avoids retrying the parse for every node.
                 $pseudo->parsedArg = self::parseNthExpression($arg);
+                if ($pseudo->parsedArg === false) {
+                    throw new SelectorError('Invalid argument for :' . $lowerName . '()');
+                }
             }
             return $pseudo;
+        }
+
+        $lowerName = strtolower($name);
+        if ($lowerName === 'not' || $lowerName === 'nth-child' || $lowerName === 'nth-of-type') {
+            throw new SelectorError(':' . $lowerName . ' requires an argument');
         }
 
         return new SelectorSimple(SelectorSimple::TYPE_PSEUDO, $name);
@@ -888,7 +896,10 @@ final class SelectorMatcher
 
         if ($selector->type === SelectorSimple::TYPE_TAG) {
             $name = $selector->name ?? '';
-            return strtolower((string)$node->name) === strtolower($name);
+            if (($node->namespace ?? 'html') === 'html') {
+                return strtolower((string)$node->name) === strtolower($name);
+            }
+            return (string)$node->name === $name;
         }
 
         if ($selector->type === SelectorSimple::TYPE_ID) {
@@ -918,11 +929,12 @@ final class SelectorMatcher
     private function matchesAttribute($node, SelectorSimple $selector): bool
     {
         $attrs = $node->attrs ?? [];
-        $attrName = strtolower($selector->name ?? '');
+        $attrName = $selector->name ?? '';
+        $html = ($node->namespace ?? 'html') === 'html';
 
         $attrValue = null;
         foreach ($attrs as $name => $value) {
-            if (strtolower($name) === $attrName) {
+            if (($html && strtolower((string)$name) === strtolower($attrName)) || (!$html && (string)$name === $attrName)) {
                 $attrValue = $value;
                 break;
             }
@@ -986,9 +998,6 @@ final class SelectorMatcher
         }
 
         if ($name === 'not') {
-            if ($selector->arg === null || $selector->arg === '') {
-                return true;
-            }
             $inner = $selector->parsedArg ?? Selector::parseSelector($selector->arg);
             return !$this->matches($node, $inner);
         }
@@ -1454,7 +1463,7 @@ final class Selector
         if ($simple->type !== SelectorSimple::TYPE_TAG || $simple->name === null) {
             return null;
         }
-        return strtolower($simple->name);
+        return $simple->name;
     }
 
     private static function queryDescendantsById($node, string $id, array &$results): void
@@ -1505,7 +1514,7 @@ final class Selector
         if ($node->hasChildNodes()) {
             foreach ($node->children as $child) {
                 if (property_exists($child, 'name') && !(isset($child->name[0]) && $child->name[0] === '#')) {
-                    if (strtolower((string)$child->name) === $tag) {
+                    if (self::tagMatches($child, $tag)) {
                         $results[] = $child;
                     }
                 }
@@ -1523,7 +1532,7 @@ final class Selector
         if ($node->hasChildNodes()) {
             foreach ($node->children as $child) {
                 if (property_exists($child, 'name') && !(isset($child->name[0]) && $child->name[0] === '#')) {
-                    if (strtolower((string)$child->name) === $tag) {
+                    if (self::tagMatches($child, $tag)) {
                         return $child;
                     }
                 }
@@ -1553,7 +1562,7 @@ final class Selector
         if (property_exists($node, 'name') && !(isset($node->name[0]) && $node->name[0] === '#')) {
             $attrs = $node->attrs ?? [];
             $hasId = ($attrs['id'] ?? '') === $id;
-            if ($matchSelf && $insideId && strtolower((string)$node->name) === $tag) {
+            if ($matchSelf && $insideId && self::tagMatches($node, $tag)) {
                 $results[] = $node;
             }
         }
@@ -1585,7 +1594,7 @@ final class Selector
         if (property_exists($node, 'name') && !(isset($node->name[0]) && $node->name[0] === '#')) {
             $attrs = $node->attrs ?? [];
             $hasId = ($attrs['id'] ?? '') === $id;
-            if ($matchSelf && $insideId && strtolower((string)$node->name) === $tag) {
+            if ($matchSelf && $insideId && self::tagMatches($node, $tag)) {
                 return $node;
             }
         }
@@ -1606,6 +1615,14 @@ final class Selector
         }
 
         return null;
+    }
+
+    private static function tagMatches($node, string $tag): bool
+    {
+        if (($node->namespace ?? 'html') === 'html') {
+            return strtolower((string)$node->name) === strtolower($tag);
+        }
+        return (string)$node->name === $tag;
     }
 
     private static function queryFirstDescendant($node, $selector)
