@@ -550,9 +550,10 @@ final class SelectorParser
         while ($this->peek()->type === SelectorTokenType::COMMA) {
             $this->advance();
             $selector = $this->parseComplexSelector();
-            if ($selector !== null) {
-                $selectors[] = $selector;
+            if ($selector === null) {
+                throw new SelectorError('Expected selector after comma');
             }
+            $selectors[] = $selector;
         }
 
         if ($this->peek()->type !== SelectorTokenType::EOF) {
@@ -932,21 +933,26 @@ final class SelectorMatcher
         $attrName = $selector->name ?? '';
         $html = ($node->namespace ?? 'html') === 'html';
 
+        $found = false;
         $attrValue = null;
         foreach ($attrs as $name => $value) {
             if (($html && strtolower((string)$name) === strtolower($attrName)) || (!$html && (string)$name === $attrName)) {
+                $found = true;
                 $attrValue = $value;
                 break;
             }
         }
 
-        if ($attrValue === null) {
+        if (!$found) {
             return false;
         }
 
         if ($selector->operator === null) {
             return true;
         }
+
+        // A null value is a boolean attribute; it compares as the empty string.
+        $attrValue = (string)($attrValue ?? '');
 
         $value = $selector->value ?? '';
         $op = $selector->operator;
@@ -1059,6 +1065,16 @@ final class SelectorMatcher
             && !(isset($node->name[0]) && $node->name[0] === '#');
     }
 
+    private function elementTypeKey($node): string
+    {
+        $namespace = (string)($node->namespace ?? 'html');
+        $name = (string)$node->name;
+        if ($namespace === 'html') {
+            $name = strtolower($name);
+        }
+        return $namespace . "\0" . $name;
+    }
+
     private function ensureParentIndex($parent): int
     {
         $parentId = spl_object_id($parent);
@@ -1080,9 +1096,9 @@ final class SelectorMatcher
             $position += 1;
             $positions[$childId] = $position;
             $previous[$childId] = $previousElement;
-            $nodeName = strtolower((string)$child->name);
-            $typeCounts[$nodeName] = ($typeCounts[$nodeName] ?? 0) + 1;
-            $typePositions[$childId] = $typeCounts[$nodeName];
+            $typeKey = $this->elementTypeKey($child);
+            $typeCounts[$typeKey] = ($typeCounts[$typeKey] ?? 0) + 1;
+            $typePositions[$childId] = $typeCounts[$typeKey];
             $previousElement = $child;
         }
 
@@ -1168,10 +1184,10 @@ final class SelectorMatcher
         if (!$parent) {
             return false;
         }
-        $nodeName = strtolower((string)$node->name);
+        $typeKey = $this->elementTypeKey($node);
         if ($this->standalone) {
             foreach ($parent->children ?? [] as $child) {
-                if ($this->isElementChild($child) && strtolower((string)$child->name) === $nodeName) {
+                if ($this->isElementChild($child) && $this->elementTypeKey($child) === $typeKey) {
                     return $child === $node;
                 }
             }
@@ -1188,12 +1204,12 @@ final class SelectorMatcher
         if (!$parent) {
             return false;
         }
-        $nodeName = strtolower((string)$node->name);
+        $typeKey = $this->elementTypeKey($node);
         if ($this->standalone) {
             $children = $parent->children ?? [];
             for ($i = count($children) - 1; $i >= 0; $i--) {
                 $child = $children[$i];
-                if ($this->isElementChild($child) && strtolower((string)$child->name) === $nodeName) {
+                if ($this->isElementChild($child) && $this->elementTypeKey($child) === $typeKey) {
                     return $child === $node;
                 }
             }
@@ -1203,7 +1219,7 @@ final class SelectorMatcher
         $parentId = $this->ensureParentIndex($parent);
         $nodeId = spl_object_id($node);
         $position = $this->parentIndexes[$parentId]['typePositions'][$nodeId] ?? 0;
-        return $position !== 0 && $position === ($this->parentIndexes[$parentId]['typeCounts'][$nodeName] ?? 0);
+        return $position !== 0 && $position === ($this->parentIndexes[$parentId]['typeCounts'][$typeKey] ?? 0);
     }
 
     private function matchesNth(int $index, int $a, int $b): bool
@@ -1251,11 +1267,11 @@ final class SelectorMatcher
             return false;
         }
         [$a, $b] = $parsed;
-        $nodeName = strtolower((string)$node->name);
+        $typeKey = $this->elementTypeKey($node);
         if ($this->standalone) {
             $position = 0;
             foreach ($parent->children ?? [] as $child) {
-                if ($this->isElementChild($child) && strtolower((string)$child->name) === $nodeName) {
+                if ($this->isElementChild($child) && $this->elementTypeKey($child) === $typeKey) {
                     $position += 1;
                     if ($child === $node) {
                         return $this->matchesNth($position, $a, $b);

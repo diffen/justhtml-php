@@ -19,7 +19,7 @@ doesn't meet your needs.
 
 ### 2. PHP-native and portable
 
-- Pure PHP 7.4+ with no extensions required.
+- Pure PHP implementation supporting PHP 7.4+.
 - Easy to debug and vendor in any PHP project.
 
 ### 3. Query and output utilities
@@ -43,6 +43,8 @@ doesn't meet your needs.
 ## Requirements
 
 - PHP 7.4+ (tested with 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5)
+- `ext-mbstring`
+- `ext-iconv`
 
 ## Installation
 

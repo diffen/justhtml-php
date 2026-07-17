@@ -37,6 +37,7 @@ $required = [
     'Encoding.php',
     'JustHTML.php',
     'Stream.php',
+    'Markdown.php',
 ];
 
 foreach ($required as $file) {
@@ -1336,6 +1337,23 @@ function run_selector_tests(bool $show_failures = false, int $max_failures = 0):
             },
         ],
         [
+            'name' => 'empty selector-list entries throw',
+            'run' => static function (): bool {
+                $doc = new JustHTML('<div id="a"></div><p class="b"></p>');
+                foreach (['div,', 'div,,', 'div,,p', 'div, ,p', 'p,'] as $selector) {
+                    try {
+                        $doc->query($selector);
+                        return false;
+                    } catch (\JustHTML\SelectorError $e) {
+                        // Expected.
+                    }
+                }
+                return count($doc->query('div, p')) === 2
+                    && count($doc->query('div,p')) === 2
+                    && count($doc->query(' #a , .b ')) === 2;
+            },
+        ],
+        [
             'name' => 'foreign selector case sensitivity',
             'run' => static function (): bool {
                 $doc = new JustHTML('<DIV></DIV><svg viewBox="0 0 1 1"><linearGradient class="x"/></svg>');
@@ -1346,6 +1364,72 @@ function run_selector_tests(bool $show_failures = false, int $max_failures = 0):
                     && count($doc->query('lineargradient.x')) === 0
                     && count($doc->query('svg[viewBox]')) === 1
                     && count($doc->query('svg[viewbox]')) === 0;
+            },
+        ],
+        [
+            'name' => 'of-type uses namespace-aware element names',
+            'run' => static function (): bool {
+                $svg = new \JustHTML\SimpleDomNode('svg', [], null, 'svg');
+                $camel = new \JustHTML\SimpleDomNode('linearGradient', null, null, 'svg');
+                $lower = new \JustHTML\SimpleDomNode('lineargradient', null, null, 'svg');
+                $svg->appendChild($camel);
+                $svg->appendChild($lower);
+                if (!$camel->matches(':first-of-type')
+                    || !$lower->matches(':first-of-type')
+                    || !$camel->matches(':only-of-type')
+                    || !$lower->matches(':only-of-type')
+                    || !$lower->matches(':nth-of-type(1)')
+                    || $lower->matches(':nth-of-type(2)')
+                    || count($svg->query(':only-of-type')) !== 2
+                ) {
+                    return false;
+                }
+
+                $mixed = new \JustHTML\SimpleDomNode('div');
+                $htmlItem = new \JustHTML\SimpleDomNode('item', null, null, 'html');
+                $svgItem = new \JustHTML\SimpleDomNode('item', null, null, 'svg');
+                $mixed->appendChild($htmlItem);
+                $mixed->appendChild($svgItem);
+                if (!$htmlItem->matches(':only-of-type')
+                    || !$svgItem->matches(':only-of-type')
+                    || count($mixed->query(':only-of-type')) !== 2
+                ) {
+                    return false;
+                }
+
+                $html = new \JustHTML\SimpleDomNode('div');
+                $upperDiv = new \JustHTML\SimpleDomNode('DIV');
+                $lowerDiv = new \JustHTML\SimpleDomNode('div');
+                $html->appendChild($upperDiv);
+                $html->appendChild($lowerDiv);
+                if (!$upperDiv->matches(':first-of-type')
+                    || $lowerDiv->matches(':first-of-type')
+                    || !$lowerDiv->matches(':nth-of-type(2)')
+                ) {
+                    return false;
+                }
+
+                $parsed = new JustHTML(
+                    '<svg><linearGradient/><stop/><linearGradient/></svg>'
+                );
+                return count($parsed->query('linearGradient:nth-of-type(1)')) === 1
+                    && count($parsed->query('linearGradient:nth-of-type(2)')) === 1;
+            },
+        ],
+        [
+            'name' => 'boolean attributes match presence selectors',
+            'run' => static function (): bool {
+                $node = new \JustHTML\SimpleDomNode('span', ['data-x' => null]);
+                if (!$node->matches('[data-x]')
+                    || !$node->matches('[data-x=""]')
+                    || $node->matches('[data-y]')
+                    || $node->matches('[data-x^="a"]')
+                    || $node->matches('[data-x*="a"]')
+                ) {
+                    return false;
+                }
+                $doc = new JustHTML('<input disabled><input>');
+                return count($doc->query('[disabled]')) === 1;
             },
         ],
     ];
@@ -1448,6 +1532,34 @@ function run_api_regression_tests(bool $show_failures = false): array
                     && $parent->children[0] === $child;
             }
             return false;
+        },
+        'removeChild rejects invalid targets' => static function (): bool {
+            $parent = new \JustHTML\SimpleDomNode('div');
+            $child = new \JustHTML\SimpleDomNode('span');
+            $missing = new \JustHTML\SimpleDomNode('i');
+            $parent->appendChild($child);
+            try {
+                $parent->removeChild($missing);
+                return false;
+            } catch (\RuntimeException $e) {
+                if (count($parent->children) !== 1
+                    || $parent->children[0] !== $child
+                    || $child->parent !== $parent
+                ) {
+                    return false;
+                }
+            }
+
+            $comment = new \JustHTML\SimpleDomNode('#comment', null, 'comment');
+            try {
+                $comment->removeChild(new \JustHTML\TextNode('x'));
+                return false;
+            } catch (\RuntimeException $e) {
+                // Expected.
+            }
+
+            $parent->removeChild($child);
+            return count($parent->children) === 0 && $child->parent === null;
         },
         'WHATWG legacy encoding labels' => static function (): bool {
             [$shiftJis, $shiftJisName] = Encoding::decodeHtml("\x82\xA0", 'shift_jis');
@@ -1610,6 +1722,40 @@ function run_api_regression_tests(bool $show_failures = false): array
             $doc = new JustHTML('<p>&' . $name . ';</p>');
             $paragraph = $doc->queryFirst('p');
             return $paragraph !== null && $paragraph->toText('', false) === '&' . $name . ';';
+        },
+        'br does not close an open paragraph' => static function (): bool {
+            $doc = new JustHTML('<p>a<br>b</p>');
+            if ($doc->toHtml(false) !== '<html><head></head><body><p>a<br>b</p></body></html>') {
+                return false;
+            }
+            // hr must still close the paragraph.
+            $hr = new JustHTML('<p>a<hr>b</p>');
+            return strpos($hr->toHtml(false), '<p>a</p><hr>') !== false;
+        },
+        'void elements reject children' => static function (): bool {
+            $br = new \JustHTML\SimpleDomNode('br');
+            try {
+                $br->appendChild(new \JustHTML\TextNode('x'));
+                return false;
+            } catch (\RuntimeException $e) {
+                // Expected.
+            }
+            // Void names outside the HTML namespace are ordinary elements.
+            $svgBr = new \JustHTML\SimpleDomNode('br', null, null, 'svg');
+            $svgBr->appendChild(new \JustHTML\TextNode('x'));
+            return count($svgBr->children) === 1;
+        },
+        'markdown list items keep block children' => static function (): bool {
+            $doc = new JustHTML('<ul><li><p>one</p><p>two</p></li><li>three</li></ul>');
+            return $doc->toMarkdown() === "- one\n\n  two\n- three";
+        },
+        'markdown nested lists stay attached' => static function (): bool {
+            $doc = new JustHTML('<ol><li>a<ul><li>b</li><li>c</li></ul></li><li>d</li></ol>');
+            return $doc->toMarkdown() === "1. a\n   - b\n   - c\n2. d";
+        },
+        'markdown link destinations are escaped' => static function (): bool {
+            $doc = new JustHTML('<a href="http://x.com/a(b) c">t</a>');
+            return $doc->toMarkdown() === '[t](http://x.com/a\\(b\\)%20c)';
         },
     ];
 

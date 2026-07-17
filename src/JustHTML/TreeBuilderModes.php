@@ -860,15 +860,6 @@ trait TreeBuilderModes
         return;
     }
 
-    private function _handle_body_start_br($token)
-    {
-        $this->_close_p_element();
-        $this->_reconstruct_active_formatting_elements();
-        $this->_insert_element($token, false);
-        $this->frameset_ok = false;
-        return;
-    }
-
     private function _handle_body_start_hr($token)
     {
         $this->_close_p_element();
@@ -895,7 +886,10 @@ trait TreeBuilderModes
             return;
         }
         $bodyElem = $this->open_elements[$bodyIndex];
-        $bodyElem->parent->removeChild($bodyElem);
+        $bodyParent = $bodyElem->parent;
+        if ($bodyParent !== null && in_array($bodyElem, $bodyParent->children ?? [], true)) {
+            $bodyParent->removeChild($bodyElem);
+        }
         $this->open_elements = array_slice($this->open_elements, 0, $bodyIndex);
         $this->_insert_element($token, true);
         $this->mode = InsertionMode::IN_FRAMESET;
@@ -2247,7 +2241,7 @@ trait TreeBuilderModes
         'big' => '_handle_body_start_formatting',
         'blockquote' => '_handle_body_start_block_with_p',
         'body' => '_handle_body_start_body',
-        'br' => '_handle_body_start_br',
+        'br' => '_handle_body_start_void_with_formatting',
         'button' => '_handle_body_start_button',
         'caption' => '_handle_body_start_table_parse_error',
         'center' => '_handle_body_start_block_with_p',

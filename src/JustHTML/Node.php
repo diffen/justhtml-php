@@ -33,7 +33,11 @@ class SimpleDomNode
             }
         } else {
             $this->namespace = $namespace ?? 'html';
-            $this->children = [];
+            // HTML void elements cannot have children; the serializer would
+            // silently drop them.
+            $this->children = isset(Constants::VOID_ELEMENTS[strtolower($name)]) && $this->namespace === 'html'
+                ? null
+                : [];
             $this->attrs = $attrs ?? [];
         }
     }
@@ -60,13 +64,14 @@ class SimpleDomNode
     public function removeChild($node): void
     {
         if ($this->children === null) {
-            return;
+            throw new \RuntimeException("Node {$this->name} cannot have children");
         }
         $index = array_search($node, $this->children, true);
-        if ($index !== false) {
-            array_splice($this->children, (int)$index, 1);
-            $node->parent = null;
+        if ($index === false) {
+            throw new \RuntimeException('The node to be removed is not a child of this node');
         }
+        array_splice($this->children, (int)$index, 1);
+        $node->parent = null;
     }
 
     public function insertBefore($node, $referenceNode): void
@@ -283,7 +288,12 @@ class ElementNode extends SimpleDomNode
         $this->parent = null;
         $this->data = null;
         $this->namespace = $namespace;
-        $this->children = [];
+        // HTML void elements cannot have children; the serializer would
+        // silently drop them.
+        $this->children = isset(Constants::VOID_ELEMENTS[strtolower($name)])
+            && ($namespace === null || $namespace === 'html')
+            ? null
+            : [];
         $this->attrs = $attrs ?? [];
         $this->templateContent = null;
     }

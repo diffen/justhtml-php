@@ -195,6 +195,19 @@ final class Markdown
         return $fence . $s . $fence;
     }
 
+    private static function markdownLinkDestination(string $href): string
+    {
+        // Whitespace and control characters end a plain CommonMark link
+        // destination, and unbalanced parentheses break it. Backslash-escape
+        // the punctuation and percent-encode the whitespace.
+        $href = str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $href);
+        return str_replace(
+            [' ', "\t", "\n", "\r", "\f"],
+            ['%20', '%09', '%0A', '%0D', '%0C'],
+            $href
+        );
+    }
+
     private static function toMarkdownWalk($node, MarkdownBuilder $builder, bool $preserveWhitespace, int $listDepth): void
     {
         $name = $node->name;
@@ -329,7 +342,9 @@ final class Markdown
 
         if ($tag === 'ul' || $tag === 'ol') {
             if ($builder->hasOutput()) {
-                $builder->ensureNewlines(2);
+                // A nested list continues its parent item; a blank line here
+                // would detach it from the item (and loosen the outer list).
+                $builder->ensureNewlines($listDepth > 0 ? 1 : 2);
             }
             $ordered = $tag === 'ol';
             $idx = 1;
@@ -340,16 +355,29 @@ final class Markdown
                 if ($idx > 1) {
                     $builder->newline(1);
                 }
-                $indent = str_repeat('  ', $listDepth);
                 $marker = $ordered ? ($idx . '. ') : '- ';
-                $builder->raw($indent);
-                $builder->raw($marker);
+                $inner = new MarkdownBuilder();
                 foreach ($child->children ?? [] as $liChild) {
-                    self::toMarkdownWalk($liChild, $builder, false, $listDepth + 1);
+                    self::toMarkdownWalk($liChild, $inner, false, $listDepth + 1);
+                }
+                // Indent continuation lines to the marker width so block
+                // children and nested lists stay inside this list item.
+                $continuation = str_repeat(' ', strlen($marker));
+                foreach (explode("\n", $inner->finish()) as $i => $line) {
+                    if ($i === 0) {
+                        $builder->raw($marker);
+                        $builder->raw($line);
+                        continue;
+                    }
+                    $builder->newline(1);
+                    if ($line !== '') {
+                        $builder->raw($continuation);
+                        $builder->raw($line);
+                    }
                 }
                 $idx += 1;
             }
-            $builder->ensureNewlines(2);
+            $builder->ensureNewlines($listDepth > 0 ? 1 : 2);
             return;
         }
 
@@ -383,7 +411,7 @@ final class Markdown
             $builder->raw(']');
             if ($href !== '') {
                 $builder->raw('(');
-                $builder->raw($href);
+                $builder->raw(self::markdownLinkDestination($href));
                 $builder->raw(')');
             }
             return;
