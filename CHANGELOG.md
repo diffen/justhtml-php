@@ -7,6 +7,27 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-07-16
+
+- Stop closing an open `<p>` element on `<br>` start tags; per the HTML spec
+  `br` is inserted like `area`/`embed`/`img`/`wbr` and stays inside the
+  paragraph.
+- Reject empty selector-list entries (`div,`, `div,,p`) with `SelectorError`
+  instead of silently skipping them.
+- Make `:first-of-type`/`:last-of-type`/`:nth-of-type`/`:only-of-type` use
+  namespace-aware element types so SVG/MathML names stay case-sensitive.
+- Throw from `removeChild` when the target is not a child, consistent with
+  the other DOM mutation helpers.
+- Match `[attr]` presence and value selectors against boolean (null-valued)
+  attributes; they compare as the empty string.
+- Markdown: keep block children inside list items, indent nested lists to
+  the marker width, and escape parentheses/whitespace in link destinations.
+- Reject children on HTML void elements (`br`, `input`, `img`, ...) instead
+  of silently dropping them during serialization.
+- Document the `ext-mbstring` and `ext-iconv` requirements in the README.
+- Load `Markdown.php` in `run_tests.php` and add regression tests for the
+  fixes above.
+
 ## [0.1.6] - 2026-07-12
 
 - Expand byte decoding to WHATWG encoding labels and require the mbstring and
