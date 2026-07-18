@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Milestone 1 spike — benchmark worker. One (fixture, selector, task,
+ * TreeBuilder streaming-select benchmark worker. One (fixture, selector, task,
  * variant) case per process, per the operational protocol in
  * docs/proposal-streaming-select.md: 3 warm-up iterations, 10 measured,
  * median reported; node counts and offsets come from a separate instrumented
@@ -13,8 +13,9 @@ declare(strict_types=1);
  *   1 dom        full parse + cheapest workload-equivalent query operation
  *   2 noprune    incremental TreeBuilder, early stop, no pruning
  *   3 prune      incremental TreeBuilder, selective retention + safe pruning
- *   4 lexical    enriched lexical stack (performance ceiling; divergence
- *                measured separately by the differential oracle)
+ *
+ * The rejected lexical ceiling is preserved at tag
+ * stream-select-spike-2026-07-18 and documented in the spike report.
  *
  * Tasks:
  *   first          first structural match (selectFirst vs parse+queryFirst)
@@ -29,10 +30,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/../benchmarks/bootstrap.php';
 require_once __DIR__ . '/../src/JustHTML/Experimental/SelectCompiler.php';
 require_once __DIR__ . '/../src/JustHTML/Experimental/StreamSelect.php';
-require_once __DIR__ . '/../src/JustHTML/Experimental/LexicalSelect.php';
 
 use JustHTML\JustHTML;
-use JustHTML\Experimental\LexicalSelect;
 use JustHTML\Experimental\StreamSelect;
 use JustHTML\Experimental\StreamSelectStats;
 
@@ -59,6 +58,10 @@ $task = (string)$opts['task'];
 $variant = (string)$opts['variant'];
 $warmup = max(0, (int)$opts['warmup']);
 $iters = max(1, (int)$opts['iters']);
+if (!in_array($variant, ['1', '2', '3'], true)) {
+    fwrite(STDERR, "unknown variant: {$variant}\n");
+    exit(1);
+}
 
 /**
  * Runs one iteration; returns [resultCount, retainedResults].
@@ -95,15 +98,11 @@ function run_case(string $variant, string $html, string $selector, string $task,
         return [count($retained), $retained];
     }
 
-    if ($variant === '4') {
-        $gen = LexicalSelect::select($html, $selector, $stats ? ['stats' => $stats] : []);
-    } else {
-        $engineOpts = $variant === '3' ? ['prune' => true] : [];
-        if ($stats) {
-            $engineOpts['stats'] = $stats;
-        }
-        $gen = StreamSelect::select($html, $selector, $engineOpts);
+    $engineOpts = $variant === '3' ? ['prune' => true] : [];
+    if ($stats) {
+        $engineOpts['stats'] = $stats;
     }
+    $gen = StreamSelect::select($html, $selector, $engineOpts);
 
     foreach ($gen as $node) {
         if ($task === 'first') {

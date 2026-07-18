@@ -3,14 +3,15 @@
 declare(strict_types=1);
 
 /**
- * Milestone 1 spike — differential oracle for Stream::select prototypes
- * (docs/proposal-streaming-select.md).
+ * Differential oracle for the selected TreeBuilder implementation of
+ * Stream::select (docs/proposal-streaming-select.md).
  *
  * The oracle is DOM equivalence: for every (input, selector) case, approach A
  * (TreeBuilder-integrated, with and without pruning) must yield exactly the
  * elements full-DOM query() returns, in the same document order, with equal
- * subtree serializations. Approach B (lexical) is compared too, but its
- * divergence is *reported*, not asserted — quantifying it is a spike output.
+ * subtree serializations. The rejected lexical comparator and its measurements
+ * are preserved at tag stream-select-spike-2026-07-18 and summarized in
+ * docs/spike-streaming-select/report.md.
  *
  * Usage:
  *   php -dxdebug.mode=off spike/differential.php                 # targeted cases
@@ -20,10 +21,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/../benchmarks/bootstrap.php';
 require_once __DIR__ . '/../src/JustHTML/Experimental/SelectCompiler.php';
 require_once __DIR__ . '/../src/JustHTML/Experimental/StreamSelect.php';
-require_once __DIR__ . '/../src/JustHTML/Experimental/LexicalSelect.php';
 
 use JustHTML\JustHTML;
-use JustHTML\Experimental\LexicalSelect;
 use JustHTML\Experimental\StreamSelect;
 
 /**
@@ -239,19 +238,6 @@ function compare_case(string $html, string $selector, array &$counters, string $
             }
         }
     }
-
-    // Lexical divergence is measured, not asserted.
-    [$lexical, $lexError] = run_variant(static function () use ($html, $selector) {
-        return LexicalSelect::select($html, $selector);
-    });
-    $counters['lex_total']++;
-    if ($lexError !== null || $lexical !== $expected) {
-        $counters['lex_diverge']++;
-        if ($verbose) {
-            echo "lexical-divergence {$label} :: {$selector}"
-                . ($lexError !== null ? " (error: {$lexError})" : '') . "\n";
-        }
-    }
 }
 
 /** Contract checks that need consumer interaction rather than final serialization. */
@@ -313,7 +299,7 @@ foreach ($args as $arg) {
     }
 }
 
-$counters = ['total' => 0, 'fail' => 0, 'lex_total' => 0, 'lex_diverge' => 0];
+$counters = ['total' => 0, 'fail' => 0];
 $start = microtime(true);
 
 if (!$corpus) {
@@ -350,9 +336,5 @@ if (!$corpus) {
 $elapsed = microtime(true) - $start;
 echo "\n=== differential oracle summary ===\n";
 echo "approach A cases: {$counters['total']}, mismatches: {$counters['fail']}\n";
-echo "lexical cases: {$counters['lex_total']}, divergences: {$counters['lex_diverge']}"
-    . ($counters['lex_total'] > 0
-        ? sprintf(' (%.1f%%)', 100.0 * $counters['lex_diverge'] / $counters['lex_total'])
-        : '') . "\n";
 printf("elapsed: %.1fs\n", $elapsed);
 exit($counters['fail'] > 0 ? 1 : 0);

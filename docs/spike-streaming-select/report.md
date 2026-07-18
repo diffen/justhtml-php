@@ -14,10 +14,11 @@ feature unchanged.
 This spike implemented two competing streaming-selector designs, tested both,
 and measured their performance before choosing one. The complete experiment,
 including the rejected lexical implementation, is preserved at the annotated
-Git tag:
+Git tag and commit:
 
 ```text
 stream-select-spike-2026-07-18
+02c572b  Archive streaming selector design spike
 ```
 
 The maintained branch removes the lexical implementation after that tagged

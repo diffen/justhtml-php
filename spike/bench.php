@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Milestone 1 spike — 4-variant benchmark orchestrator
+ * TreeBuilder streaming-select benchmark orchestrator
  * (docs/proposal-streaming-select.md, "Benchmark plan" + go/no-go gate).
  *
  * Each (fixture, selector, task, variant) case runs in a fresh subprocess
@@ -18,6 +18,8 @@ declare(strict_types=1);
  * Results go to spike/results/<scenario>-<timestamp>.jsonl plus a summary on
  * stdout. Commit, PHP version, fixture hashes and exact commands are recorded.
  * A run is written as *.partial and becomes *.jsonl only after all cases finish.
+ * Historical lexical-ceiling results are retained in the spike report and at
+ * tag stream-select-spike-2026-07-18.
  */
 
 function run_worker(array $params, int $warmup, int $iters): ?array
@@ -103,8 +105,8 @@ fwrite($outHandle, json_encode(['meta' => $meta]) . "\n");
 $writtenRows = 0;
 $expectedRows = 0;
 
-$variants = ['1', '2', '3', '4'];
-$variantNames = ['1' => 'dom-baseline', '2' => 'A/no-prune', '3' => 'A/prune', '4' => 'B/lexical'];
+$variants = ['1', '2', '3'];
+$variantNames = ['1' => 'dom-baseline', '2' => 'A/no-prune', '3' => 'A/prune'];
 
 if ($scenario === 'lead') {
     $file = realpath(__DIR__ . '/../examples/fixtures/wikipedia-earth.html');
@@ -215,7 +217,7 @@ if ($scenario === 'lead') {
     // the first full-DOM match's source offset (quartiles of input length).
     $groups = ['early' => [], 'mid' => [], 'late' => [], 'no-source-offset' => [], 'no-match' => []];
     foreach ($perCase as $case) {
-        if (!isset($case['1'], $case['2'], $case['3'], $case['4'])) {
+        if (!isset($case['1'], $case['2'], $case['3'])) {
             continue;
         }
         $src = $case['2']['first_src_offset'];
@@ -239,16 +241,14 @@ if ($scenario === 'lead') {
         }
         $latRatios = [];
         $nodeRatios = [];
-        $latRatiosV4 = [];
         foreach ($cases as $case) {
             $latRatios[] = $case['1']['median_ms'] / max(1e-9, $case['3']['median_ms']);
             if ($case['3']['peak_live_nodes'] > 0) {
                 $nodeRatios[] = $case['1']['peak_live_nodes'] / $case['3']['peak_live_nodes'];
             }
-            $latRatiosV4[] = $case['1']['median_ms'] / max(1e-9, $case['4']['median_ms']);
         }
-        printf("%-18s cases=%4d  v1/v3 latency geomean=%6.2fx  v1/v3 peak-node geomean=%6.2fx  v1/v4 latency geomean=%6.2fx\n",
-            $name, count($cases), geomean($latRatios) ?? 0, geomean($nodeRatios) ?? 0, geomean($latRatiosV4) ?? 0);
+        printf("%-18s cases=%4d  v1/v3 latency geomean=%6.2fx  v1/v3 peak-node geomean=%6.2fx\n",
+            $name, count($cases), geomean($latRatios) ?? 0, geomean($nodeRatios) ?? 0);
     }
     echo "\ngate (early group): v1/v3 latency geomean >= 2 and v1/v3 peak-node geomean >= 2\n";
 } else {
