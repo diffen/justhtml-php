@@ -8,7 +8,7 @@ use JustHTML\Stream;
 
 $html = '<div><span>Hello</span></div>';
 
-foreach (Stream::stream($html) as [$event, $data]) {
+foreach (Stream::events($html) as [$event, $data]) {
     echo $event . ' ';
     if (is_array($data)) {
         echo json_encode($data);

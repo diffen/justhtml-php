@@ -1,398 +1,211 @@
-# Streaming
+# Choosing a parsing path
 
-Streaming is the low-level tokenizer interface. It yields events as HTML is tokenized, without building a DOM tree.
-This is event streaming, not chunked file reading. You still pass the full HTML string (or byte buffer) in memory.
+Most users should choose between the full parser and targeted selector
+extraction. A lower-level event API for specialized scanners is documented at
+the end of this guide.
 
-## When to use streaming
+All of these APIs accept a complete HTML string or byte buffer. “Streaming” here
+means that parsing can stop early and avoid retaining unnecessary document
+data; it does not mean that JustHTML reads a network response or file in chunks.
 
-Pros:
-- Lower memory use (no DOM)
-- Can stop early once you find what you need
-- Good for scans, counters, and simple extraction
+## Quick recommendation
 
-Cons:
-- No CSS selectors
-- Manual state tracking
-- No tree-builder fixes (implicit end tags are not inserted)
+If you are unsure, use `new JustHTML(...)` and `query()`.
 
-If you need selectors, DOM traversal, or spec-correct tree fixes, use the full parser (`new JustHTML(...)`).
+| Path | Choose it when | Benefits | Costs and risks |
+|---|---|---|---|
+| **Full parser (default):** `new JustHTML(...)` | You need several fields, multiple or complex selectors, surrounding context, traversal, or mutation | Simplest application code; complete selector and document APIs; reliable handling of malformed pages | Parses and retains the whole document; usually more work than an early targeted match |
+| **Targeted extraction:** `Stream::select()` | You need one or a few known elements, especially matches that usually occur early | Same results as normal `query()` for supported selectors; can stop early and retain much less data | Smaller selector set; late, missing, or broad matches may save little or be slower; returned nodes have limited surrounding context |
 
-## Quick start
+For common crawling jobs:
 
-```php
-use JustHTML\Stream;
+- Extracting a title, canonical URL, article body, author, and several metadata
+  fields: use the **full parser**.
+- Extracting the first product price or lead paragraph from a known location:
+  consider **`Stream::select()`**.
 
-$html = '<p class="lead">Hello <em>world</em>!</p>';
+### Performance at a glance
 
-foreach (Stream::stream($html) as [$event, $data]) {
-    echo $event . ' -> ' . json_encode($data) . "\n";
-}
-```
+The clearest benefit appears when the desired element is selective, occurs
+early, and the crawler stops after finding it. For the first non-empty lead
+paragraph in the bundled Wikipedia fixture:
 
-## Event reference
+| Measure | Full parser | `Stream::select()` | Difference |
+|---|---:|---:|---:|
+| Parse and extract time¹ | 56.44 ms | 25.75 ms | 2.19× faster (54% less time) |
+| Retained parser nodes² | 24,298 | 172 | 141× fewer (99.3% fewer nodes) |
 
-Each yielded value is a two-item array: `[$event, $data]`.
+¹ PHP 8.5.8, five-run average, rerun 2026-07-22.
 
-- `start`: `[$tagName, $attrs]`
-  - `$tagName` is a lowercase tag name (string)
-  - `$attrs` is an associative array of attribute name to value (string) or null for boolean attrs
-- `end`: `$tagName`
-- `text`: the text content (string). Adjacent text chunks are merged.
-- `comment`: the comment body (string, without `<!-- -->`)
-- `doctype`: `[$name, $publicId, $systemId]` (strings or null)
+² A memory proxy from the same extraction scenario. It measures parser data,
+not total process memory; the complete input string remains in memory with
+either API.
 
-Notes:
-- Void elements like `img`, `br`, `meta` emit only a `start` event (no `end` event).
-- Character references are decoded in text and attribute values.
-- The stream does not expose parse errors; it is raw tokenizer output, not the tree builder.
+Treat these as an example, not a general multiplier. A late or missing match,
+a broad selector, or consuming every result can remove the advantage and may
+make targeted extraction slower than the full parser.
 
-## Example: full event stream
+## Default: parse the complete document
 
-Input:
-
-```html
-<!doctype html>
-<p class="lead">Hello <em>world</em><!-- note -->!</p>
-```
-
-Output (events shown as `event -> data`):
-
-```text
-doctype -> ["html",null,null]
-start -> ["p",{"class":"lead"}]
-text -> "Hello "
-start -> ["em",[]]
-text -> "world"
-end -> "em"
-comment -> " note "
-text -> "!"
-end -> "p"
-```
-
-## Example: first non-empty paragraph under #mw-content-text
-
-The full parser version (non-empty means non-whitespace text):
+The full parser is the recommended starting point because it keeps all document
+context available and supports the complete JustHTML selector API:
 
 ```php
 use JustHTML\JustHTML;
 
 $doc = new JustHTML($html);
-$leadText = '';
-foreach ($doc->query('#mw-content-text p') as $p) {
-    $text = $p->toText();
+$title = $doc->queryFirst('h1');
+$links = $doc->query('main a[href]');
+```
+
+Optimize to `Stream::select()` only when profiling shows that full-page parsing
+or retention matters and the task fits the supported selector subset.
+
+## Targeted CSS extraction: `Stream::select()`
+
+Use targeted extraction when you need a small part of a document and want the
+same malformed-HTML handling as the full parser without always retaining and
+finishing the whole page.
+
+```php
+use JustHTML\Stream;
+
+foreach (Stream::select($html, '#mw-content-text p') as $paragraph) {
+    $text = $paragraph->toText();
     if ($text !== '') {
-        $leadText = $text;
-        break;
+        echo $text;
+        break; // abandoning the generator stops parsing
     }
 }
+
+$title = Stream::selectFirst($html, 'main > h1'); // first match or null
 ```
 
-A streaming version that matches `toText()` defaults (trim text nodes and join with a space).
-Here, \"non-empty\" means at least one non-whitespace text segment:
+The targeted APIs accept either text or a byte buffer:
+
+```php
+Stream::select($html, string $selector, ?string $encoding = null, bool $bytes = false): Generator
+Stream::selectFirst($html, string $selector, ?string $encoding = null, bool $bytes = false): ?SimpleDomNode
+```
+
+When `$bytes` is true, the input is decoded to UTF-8 using `$encoding` or HTML
+encoding detection. Invalid or unsupported selectors throw `SelectorError`.
+
+### Selector subset
+
+The first release supports:
+
+- type, universal, ID, class, and attribute selectors;
+- compound selectors and comma-separated selector lists;
+- descendant and child (`>`) combinators;
+- `:first-child`, `:nth-child()`, `:first-of-type`, and `:nth-of-type()`;
+- `:not()` when its argument uses this same subset.
+
+The attribute grammar and operators are the same as the regular `query()` API.
+Sibling combinators (`+`, `~`), `:empty`, `:last-*`, `:only-*`, `:nth-last-*`,
+`:has()`, and attribute case flags are not supported by selector streaming.
+They are rejected instead of silently using different semantics.
+
+### What results contain
+
+For supported selectors, matches have the same order, attributes, text, and
+descendants that regular `query()` would return, including on malformed HTML.
+
+Each result contains the selected element and its descendants, but not ancestors
+outside the match. Attribute access, serialization, `toText()`, `toMarkdown()`,
+and descendant `query()`/`queryFirst()` calls work. Treat results as read-only
+while iterating; changing one result can affect another overlapping result.
+
+### Performance characteristics
+
+Selector streaming helps most when a selective match occurs early and the
+consumer stops early. Some selectors and malformed structures must wait for an
+enclosing element or EOF before a match becomes final. Broad selectors such as
+`*` or `body *`, all-result workloads, and absent selectors can approach or
+exceed full-parser work.
+
+The benchmark above is workload- and machine-specific. Targeted extraction is
+not a universal replacement for the full parser. Its benefit is reducing work
+and parser memory without changing the selected result. See the
+[benchmark guide](benchmarks/README.md) for the protocol and broader diagnostics.
+
+## Advanced event scanning: `Stream::events()`
+
+Use `Stream::events()` only when tokenizer events are sufficient and you are
+prepared to implement the task-specific logic yourself. It reports what the
+tokenizer encounters; it does not provide CSS selectors or repair the page into
+the document structure a browser would expose.
 
 ```php
 use JustHTML\Stream;
 
-function append_text_segment(array &$segments, string $data, bool &$hasText): void
-{
-    $text = trim($data);
-    if ($text === '') {
-        return;
-    }
-    $segments[] = $text;
-    $hasText = true;
-}
-
-$inContainer = false;
-$containerDepth = 0;
-$capturing = false;
-$hasText = false;
-$segments = [];
-$separator = ' ';
-
-foreach (Stream::stream($html) as [$event, $data]) {
-    if ($event === 'start') {
-        [$tag, $attrs] = $data;
-        $tag = (string)$tag;
-        $attrs = is_array($attrs) ? $attrs : [];
-
-        if (!$inContainer) {
-            if ($tag === 'div' && (($attrs['id'] ?? '') === 'mw-content-text')) {
-                $inContainer = true;
-                $containerDepth = 1;
-            }
-            continue;
-        }
-
-        $containerDepth += 1;
-        if ($tag === 'p') {
-            if ($capturing && $hasText) {
-                break;
-            }
-            $capturing = true;
-            $hasText = false;
-            $segments = [];
-        }
-        continue;
-    }
-
-    if ($event === 'end') {
-        $tag = (string)$data;
-        if ($inContainer) {
-            $containerDepth -= 1;
-            if ($containerDepth <= 0) {
-                $inContainer = false;
-            }
-        }
-
-        if ($capturing && $tag === 'p') {
-            if ($hasText) {
-                break;
-            }
-            $capturing = false;
-            $hasText = false;
-            $segments = [];
-        }
-        continue;
-    }
-
-    if ($event === 'text' && $capturing) {
-        append_text_segment($segments, $data, $hasText);
+foreach (Stream::events($html) as [$event, $data]) {
+    if ($event === 'start' && $data[0] === 'a') {
+        $href = $data[1]['href'] ?? null;
     }
 }
-
-$text = $segments ? implode($separator, $segments) : '';
 ```
 
-This includes a simple heuristic that treats a new `<p>` start tag as the end of the previous paragraph,
-since streaming does not insert implicit end tags. If your HTML relies heavily on implicit tag rules,
-you may need extra logic.
+Each yielded value is `[$event, $data]`:
 
-## Performance comparison (example)
+- `start`: `[$tagName, $attrs]`
+- `end`: `$tagName`
+- `text`: decoded text; adjacent text chunks are merged
+- `comment`: the comment body without delimiters
+- `doctype`: `[$name, $publicId, $systemId]`
 
-Run this snippet on the Wikipedia fixture to compare streaming vs full parser:
+HTML void elements such as `img`, `br`, and `meta` emit only a `start` event.
+The event iterator does not expose parse errors.
+
+### What “events” means
+
+This is lazy **HTML tokenization**, similar to a pull parser. It is not a stream
+of file or network bytes, does not accept a PHP stream resource, and does not
+read input incrementally. The complete HTML string or byte buffer must already
+be in memory:
 
 ```php
-use JustHTML\JustHTML;
-use JustHTML\Stream;
-
-$html = file_get_contents('examples/fixtures/wikipedia-earth.html');
-
-function full_parse(string $html): string
-{
-    $doc = new JustHTML($html);
-    foreach ($doc->query('#mw-content-text p') as $p) {
-        $text = $p->toText();
-        if ($text !== '') {
-            return $text;
-        }
-    }
-    return '';
-}
-
-function stream_parse(string $html): string
-{
-    $inContainer = false;
-    $containerDepth = 0;
-    $capturing = false;
-    $hasText = false;
-    $segments = [];
-
-    foreach (Stream::stream($html) as [$event, $data]) {
-        if ($event === 'start') {
-            [$tag, $attrs] = $data;
-            $tag = (string)$tag;
-            $attrs = is_array($attrs) ? $attrs : [];
-
-            if (!$inContainer) {
-                if ($tag === 'div' && (($attrs['id'] ?? '') === 'mw-content-text')) {
-                    $inContainer = true;
-                    $containerDepth = 1;
-                }
-                continue;
-            }
-
-            $containerDepth += 1;
-            if ($tag === 'p') {
-                if ($capturing && $hasText) {
-                    break;
-                }
-                $capturing = true;
-                $hasText = false;
-                $segments = [];
-            }
-            continue;
-        }
-
-        if ($event === 'end') {
-            $tag = (string)$data;
-            if ($inContainer) {
-                $containerDepth -= 1;
-                if ($containerDepth <= 0) {
-                    $inContainer = false;
-                }
-            }
-
-            if ($capturing && $tag === 'p') {
-                if ($hasText) {
-                    break;
-                }
-                $capturing = false;
-                $hasText = false;
-                $segments = [];
-            }
-            continue;
-        }
-
-        if ($event === 'text' && $capturing) {
-            $text = trim($data);
-            if ($text === '') {
-                continue;
-            }
-            $segments[] = $text;
-            $hasText = true;
-        }
-    }
-
-    return $segments ? implode(' ', $segments) : '';
-}
-
-function bench(callable $fn, int $iterations): float
-{
-    $total = 0.0;
-    for ($i = 0; $i < $iterations; $i++) {
-        $t0 = hrtime(true);
-        $fn();
-        $t1 = hrtime(true);
-        $total += ($t1 - $t0) / 1e6;
-    }
-    return $total / $iterations;
-}
-
-$iterations = 5;
-full_parse($html);
-stream_parse($html);
-
-$avgFull = bench(fn() => full_parse($html), $iterations);
-$avgStream = bench(fn() => stream_parse($html), $iterations);
-
-printf("Full parser avg: %.2f ms\n", $avgFull);
-printf("Stream avg: %.2f ms\n", $avgStream);
+Stream::events($html, ?string $encoding = null, bool $bytes = false): Generator
 ```
 
-Example results on one machine for lead paragraph extraction
-(PHP 8.5.8, 5-run average, Wikipedia fixture):
+The generator tokenizes lazily, so abandoning iteration stops further parsing.
+It avoids allocating a DOM, but it does not eliminate the memory occupied by
+the input string. When `$bytes` is true, JustHTML decodes the supplied byte
+buffer using `$encoding` or HTML encoding detection; it still receives that
+buffer in full.
 
-```text
-Full parser avg: 171.85 ms
-Stream avg: 23.55 ms
-```
+### What value it adds
 
-Your results will vary by machine and PHP version.
+This API provides a small public interface to JustHTML's HTML tokenizer without
+requiring callers to depend on tokenizer internals. It is useful for narrowly
+defined jobs such as counting tags, collecting token attributes, observing
+comments or doctypes, or stopping after a specific source token. It also avoids
+DOM allocation and can stop earlier than either selector-based path.
 
-## Common streaming patterns
+In the 2026-07-22 lead-paragraph benchmark, a hand-written `Stream::events()`
+scanner took 6.75 ms, compared with 25.75 ms for `Stream::select()` and 56.44 ms
+for the full parser. This shows the potential speed of specialized code, but it
+is not an apples-to-apples replacement: the event version implements the
+extraction as a custom state machine and does not promise the same document
+structure as the parser-based APIs.
 
-### 1) Fast link extraction
+### Correctness and maintenance risks
 
-```php
-$links = [];
-foreach (Stream::stream($html) as [$event, $data]) {
-    if ($event !== 'start') {
-        continue;
-    }
-    [$tag, $attrs] = $data;
-    if ($tag === 'a' && isset($attrs['href'])) {
-        $links[] = $attrs['href'];
-    }
-}
-```
+Start and end events describe tokens found in the source. They do not describe
+the corrected document structure that a browser or the full JustHTML parser
+would produce. In particular, implied elements, omitted end tags, and
+misnested or otherwise malformed markup can make a hand-written nesting model
+disagree with the parsed document without raising an error.
 
-### 2) Skip script/style content
+That makes event scanning a poor fit for CSS selection, extracting surrounding
+document context, or any task where browser-like structure matters. Custom
+state machines also add application code that must be tested and maintained.
+For CSS selection, use `Stream::select()`. When you need several values,
+complex selectors, ancestors, traversal, or mutation, use the full parser.
 
-```php
-$skipDepth = 0;
+### Compatibility alias
 
-foreach (Stream::stream($html) as [$event, $data]) {
-    if ($event === 'start') {
-        [$tag, $_] = $data;
-        if ($tag === 'script' || $tag === 'style') {
-            $skipDepth += 1;
-        }
-        continue;
-    }
-
-    if ($event === 'end') {
-        $tag = $data;
-        if ($skipDepth > 0 && ($tag === 'script' || $tag === 'style')) {
-            $skipDepth -= 1;
-        }
-        continue;
-    }
-
-    if ($event === 'text' && $skipDepth === 0) {
-        // Process visible text here.
-    }
-}
-```
-
-### 3) Subtree-limited extraction
-
-```php
-$inArticle = false;
-$depth = 0;
-$text = [];
-
-foreach (Stream::stream($html) as [$event, $data]) {
-    if ($event === 'start') {
-        [$tag, $attrs] = $data;
-        if (!$inArticle && $tag === 'article') {
-            $inArticle = true;
-            $depth = 1;
-            continue;
-        }
-        if ($inArticle) {
-            $depth += 1;
-        }
-        continue;
-    }
-
-    if ($event === 'end') {
-        if ($inArticle) {
-            $depth -= 1;
-            if ($depth <= 0) {
-                break;
-            }
-        }
-        continue;
-    }
-
-    if ($event === 'text' && $inArticle) {
-        $text[] = $data;
-    }
-}
-
-$articleText = trim(implode('', $text));
-```
-
-### 4) Build your own text extractor
-
-```php
-$parts = [];
-foreach (Stream::stream($html) as [$event, $data]) {
-    if ($event === 'text') {
-        $parts[] = $data;
-    }
-}
-$plain = preg_replace('/\s+/', ' ', trim(implode('', $parts)));
-```
-
-## Tips and limitations
-
-- Streaming does not support CSS selectors. You must implement matching logic using tags and attributes.
-- The stream reflects tokenizer output. It does not fix malformed HTML or insert implicit end tags.
-- For very large files, streaming avoids DOM memory use, but the input still has to fit in memory.
-
-## Encoding
-
-`Stream::stream($html, $encoding = null, $bytes = false)` accepts either text or raw bytes.
-If `$bytes` is true, the input is decoded to UTF-8 using the provided encoding or HTML sniffing.
+`Stream::stream()` remains as a deprecated alias for `Stream::events()` so
+existing callers do not break. New code should use `Stream::events()`. The new
+name deliberately describes the values being produced without suggesting
+incremental file or network I/O.

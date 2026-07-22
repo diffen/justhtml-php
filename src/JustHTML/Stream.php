@@ -220,7 +220,51 @@ final class StreamSink
 
 final class Stream
 {
-    public static function stream($html, ?string $encoding = null, bool $bytes = false): \Generator
+    /**
+     * Yields completed elements matching the supported streaming selector
+     * subset, in document order. Results are detached from parser state.
+     *
+     * Selector compilation is eager: invalid or unsupported selectors throw
+     * SelectorError when this method is called, before iteration starts.
+     *
+     * @return \Generator<int, SimpleDomNode>
+     */
+    public static function select(
+        $html,
+        string $selector,
+        ?string $encoding = null,
+        bool $bytes = false
+    ): \Generator {
+        return StreamSelect::select($html, $selector, [
+            'encoding' => $encoding,
+            'bytes' => $bytes,
+            'prune' => true,
+        ]);
+    }
+
+    /**
+     * Returns the first document-order match, or null when none exists.
+     */
+    public static function selectFirst(
+        $html,
+        string $selector,
+        ?string $encoding = null,
+        bool $bytes = false
+    ): ?SimpleDomNode {
+        foreach (self::select($html, $selector, $encoding, $bytes) as $node) {
+            return $node;
+        }
+        return null;
+    }
+
+    /**
+     * Lazily yields tokenizer events from a complete in-memory HTML input.
+     *
+     * This is event iteration, not incremental file or network I/O.
+     *
+     * @return \Generator<int, array{0:string,1:mixed}>
+     */
+    public static function events($html, ?string $encoding = null, bool $bytes = false): \Generator
     {
         if ($html === null) {
             $htmlStr = '';
@@ -262,5 +306,13 @@ final class Stream
                 break;
             }
         }
+    }
+
+    /**
+     * @deprecated Use Stream::events() instead.
+     */
+    public static function stream($html, ?string $encoding = null, bool $bytes = false): \Generator
+    {
+        return self::events($html, $encoding, $bytes);
     }
 }

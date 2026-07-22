@@ -3,6 +3,9 @@
 The `justhtml` CLI parses HTML, optionally selects nodes with a CSS selector, and outputs HTML, text, or Markdown.
 It accepts either a file path or `-` for stdin.
 
+For basic first-result extractions, the CLI automatically chooses a
+significantly faster parsing method when appropriate.
+
 Run it:
 
 - From this repo: `php bin/justhtml`
@@ -330,3 +333,25 @@ php bin/justhtml --help
 ```
 
 Output: prints the full usage/help text.
+
+## Implementation notes: automatic parsing path
+
+The command-line interface and output do not depend on which parser path is
+chosen. With `--first` or `--limit 1`, the CLI uses `Stream::select()` when the
+selector is supported and selective, allowing parsing to stop after the first
+completed match. Unsupported selectors transparently fall back to the full
+`query()` path.
+
+For this optimization, “selective” means that every branch of the selector ends
+in a tag, ID, or class that can narrow candidates. Broad selectors such as `*`,
+attribute-only selectors, and `html` or `body` targets stay on the full parser.
+Counts, requests for more than one result, selectors without a limit, and
+document-root output also use the full parser.
+
+This choice changes performance only; selector results and exit behavior remain
+the same. A selector that looks selective but is absent may still be slower on
+the targeted path because absence cannot be known before reaching the end of
+the document.
+
+Passing HTML on stdin changes only where input comes from. The CLI reads the
+complete input into memory before either parsing path starts.

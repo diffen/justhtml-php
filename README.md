@@ -7,38 +7,21 @@ tokenizer, serializer, and encoding tests).
 
 ## Why use JustHTML?
 
-If you're on PHP 8.4+ and don't need edge-case HTML5 correctness (which is most use cases),
-start with PHP's built-in [`DOM\\HTMLDocument`](https://www.php.net/manual/en/class.dom-htmldocument.php) instead.
-It's faster and implemented in C, and will be a better fit for many projects. Use JustHTML only if that
-doesn't meet your needs.
+If you are on PHP 8.4+ and need to process a complete document, start with
+PHP's built-in
+[`DOM\\HTMLDocument`](https://www.php.net/manual/en/class.dom-htmldocument.php).
+Its C implementation is faster and is a better fit for many projects.
 
-### 1. Correct HTML5 parsing
+Choose JustHTML when you need one or more of these:
 
-- Passes the html5lib test suite (tree builder, tokenizer, serializer, encoding).
-- Mirrors browser error handling for malformed HTML.
+- Pure PHP support across PHP 7.4 through 8.5.
+- Browser-like handling of malformed HTML.
+- CSS selectors plus HTML, text, and Markdown extraction helpers.
+- Targeted extraction of a few known elements without always parsing and
+  retaining the complete document.
 
-### 2. PHP-native and portable
-
-- Pure PHP implementation supporting PHP 7.4+.
-- Easy to debug and vendor in any PHP project.
-
-### 3. Query and output utilities
-
-- CSS selectors via `query()`, `queryFirst()`, and `matches()`.
-- HTML, text, and Markdown output helpers for common workflows.
-
-### 4. Event streaming
-
-- Streaming tokenizer events for low-memory, early-exit parsing.
-
-## Features
-
-- HTML5-compliant parsing with html5lib test coverage
-- DOM-like tree with HTML serialization and text extraction
-- CSS selectors with `query()`, `queryFirst()`, and `matches()`
-- Markdown conversion via `toMarkdown()`
-- Streaming tokenizer API
-- Fragment parsing and strict error mode
+For most tasks, start with the full parser shown below. The
+[parsing guide](Streaming.md) explains when targeted extraction is worthwhile.
 
 ## Requirements
 
@@ -146,35 +129,35 @@ The script loads `examples/fixtures/wikipedia-earth.html` and prints a
 walkthrough of selectors, attributes, classes, inner/outer HTML, text, and
 Markdown extraction.
 
-## Streaming
+## Choosing a parsing API
 
-Streaming yields tokenizer events (`start`, `end`, `text`, `comment`, `doctype`) without building a DOM tree.
-It is event streaming, not chunked file I/O; you still pass a full HTML string.
-
-Pros:
-- Lower memory (no DOM build)
-- Early exit once you find what you need
-- Good for scans and counters
-
-Cons:
-- No CSS selectors
-- Manual state tracking
-- No tree-builder fixes (implicit end tags are not inserted)
+For most crawling tasks, use the full parser shown in the quickstart. Choose
+`Stream::select()` only when you need one or a few known matches and want to
+avoid unnecessary work after finding them. Stop iteration to stop parsing:
 
 ```php
 use JustHTML\Stream;
 
-$links = 0;
-foreach (Stream::stream($html) as [$event, $data]) {
-    if ($event === 'start' && $data[0] === 'a') {
-        $links += 1;
+foreach (Stream::select($html, '#mw-content-text p') as $paragraph) {
+    $text = $paragraph->toText();
+    if ($text !== '') {
+        echo $text;
+        break;
     }
 }
+
+$title = Stream::selectFirst($html, 'main > h1');
 ```
 
-Example timing for extracting the first non-empty paragraph under `#mw-content-text` on the Wikipedia fixture
-(PHP 8.5.8, 5-run average): streaming ~24 ms vs full parser ~172 ms.
-Your results will vary. For deeper explanations and examples, see [Streaming.md](Streaming.md).
+This optimized path trades flexibility for lower work and memory: it supports a
+documented subset of CSS selectors, may offer little benefit when a match is
+late or absent, and returns nodes that should be treated as read-only while the
+generator is active. Like the full parser, it accepts a complete in-memory HTML
+string or byte buffer; it does not stream a network response or file in chunks.
+
+See [Streaming.md](Streaming.md) for a task-based decision guide, selector
+support, risks, encoding options, and the lower-level event API for specialized
+scanners.
 
 ## CLI
 
@@ -184,28 +167,8 @@ php bin/justhtml page.html --selector "main p" --format text
 
 For more detailed examples, see [CLI.md](CLI.md).
 
-Full usage:
-
-```text
-Usage: justhtml [options] <path|->
-
-Options:
-  --selector <css>   CSS selector (defaults to document root)
-  --format <fmt>     html, text, or markdown (default: html)
-  --outer            HTML-only: output outer HTML (default)
-  --inner            HTML-only: output inner HTML
-  --attr <name>      Output attribute values (repeatable)
-  --missing <value>  Attr-only: placeholder for missing attributes (default: __MISSING__)
-  --first            Only output first matching node
-  --limit <n>        Only output first N matching nodes
-  --separator <s>    Text-only: join string between text nodes (default: single space);
-                     Attr-only: join attributes (default: tab)
-  --strip            Text-only: strip each text node and drop empty segments (default)
-  --no-strip         Text-only: preserve text node whitespace
-  --count            Print number of matching nodes (incompatible with --first, --limit, --format, --attr)
-  --version          Print version information
-  -h, --help         Show this help
-```
+For basic first-result extractions, the CLI automatically chooses a
+significantly faster parsing method when appropriate.
 
 More examples:
 
@@ -214,7 +177,7 @@ More examples:
 php bin/justhtml examples/fixtures/wikipedia-earth.html \
   --selector '#mw-content-text p:not(:empty)' --format text --first
 
-# Stream HTML via stdin and extract markdown from an article.
+# Pipe HTML via stdin and extract markdown from an article.
 curl -s https://example.com | php bin/justhtml - --selector "article" --format markdown
 
 # Preserve whitespace when extracting text.
@@ -223,48 +186,47 @@ php bin/justhtml page.html --selector "pre" --format text --no-strip --separator
 
 ## Comparison to other parsers
 
-Compliance results are based on the html5lib tree-construction tests. Performance
-results are from `benchmarks/performance.php` using a Common Crawl 1,000-document
-fixture set (avg ms/doc: lower is better). Generate fixtures with
-`php benchmarks/fetch_commoncrawl.php` and run with
-`--dir benchmarks/fixtures/commoncrawl-1k --iterations 3`.
-
-Benchmarks here were run on PHP 8.5.8 with libxml 2.9.13. Run
-`php benchmarks/correctness.php --markdown` and
-`php benchmarks/performance.php --dir benchmarks/fixtures/commoncrawl-1k --iterations 3 --markdown`
-to regenerate.
+Compliance results use the html5lib tree-construction tests. Performance
+results use a 1,000-document Common Crawl fixture set and report average
+milliseconds per document (lower is better). Compliance was verified and
+performance rerun on 2026-07-22 using PHP 8.5.8 with libxml 2.9.13.
 
 | Parser | Spec compliance (html5lib-tests pass rate) | Speed: Avg ms/doc (lower is better) | Selectors | Notes |
 |--------|---------------------------------------------|------------------------------------:|-----------|-------|
-| **JustHTML** | 1770/1770 (**100%**) | 12.6 | CSS | Full spec compliance |
-| DOM\HTMLDocument | 873/1770 (49.3%) | **0.5** | CSS | PHP built-in DOM extension (DOM\\HTMLDocument; HTML5 parser in PHP 8.4+, C implementation) |
-| DOMDocument (libxml) | 54/1770 (3.1%) | 0.8 | XPath | Legacy HTML parser (libxml2), not HTML5-correct |
-| masterminds/html5 | 75/1770 (4.2%) | 9.9 | XPath | HTML5 parser, low compliance |
-| voku/simple_html_dom | 29/1770 (1.6%) | 2.1 | CSS | Lenient DOM wrapper, low compliance |
-| symfony/dom-crawler | 54/1770 (3.1%) | 9.8 | CSS/XPath | Wrapper over DOMDocument (libxml) |
+| **JustHTML** | 1770/1770 (**100%**) | 4.03 | CSS | Full spec compliance |
+| DOM\HTMLDocument | 873/1770 (49.3%) | **0.45** | CSS | PHP built-in DOM extension (DOM\\HTMLDocument; HTML5 parser in PHP 8.4+, C implementation) |
+| DOMDocument (libxml) | 54/1770 (3.1%) | 0.77 | XPath | Legacy HTML parser (libxml2), not HTML5-correct |
+| masterminds/html5 | 75/1770 (4.2%) | 3.50 | XPath | HTML5 parser, low compliance |
+| voku/simple_html_dom | 29/1770 (1.6%) | 2.08 | CSS | Lenient DOM wrapper, low compliance |
+| symfony/dom-crawler | 54/1770 (3.1%) | 3.38 | CSS/XPath | Wrapper over DOMDocument (libxml) |
 
-See `benchmarks/README.md` for parser install instructions and details.
+See the [benchmark guide](benchmarks/README.md) for dependencies, reproduction
+commands, methodology, and historical results.
 
 ## Lead paragraph extraction benchmark
 
-Measures parse + extract of the first non-empty paragraph under `#mw-content-text`
-from `examples/fixtures/wikipedia-earth.html`:
+This benchmark parses the bundled Wikipedia Earth fixture and extracts its
+first non-empty lead paragraph.
 
-```sh
-php benchmarks/lead_paragraph.php --iterations 5 --markdown
-```
-
-Example results (PHP 8.5.8, 5-run average; all outputs match the JustHTML baseline):
+Example results (PHP 8.5.8, rerun 2026-07-22, 5-run average; all outputs match
+the JustHTML baseline):
 
 | Parser | Average time (milliseconds) | Total time (seconds) | Iterations |
 |--------|----------------------------:|---------------------:|-----------:|
-| **JustHTML** | 171.85 | 0.86 | 5 |
-| **JustHTML (stream)** | 23.55 | 0.12 | 5 |
-| DOM\HTMLDocument | 8.13 | **0.04** | 5 |
-| DOMDocument (libxml) | 10.09 | 0.05 | 5 |
-| masterminds/html5 | 134.06 | 0.67 | 5 |
-| voku/simple_html_dom | 115.06 | 0.58 | 5 |
-| symfony/dom-crawler | 143.08 | 0.72 | 5 |
+| **JustHTML** | 56.44 | 0.28 | 5 |
+| **JustHTML (`Stream::select`)** | 25.75 | 0.13 | 5 |
+| DOM\HTMLDocument | 6.90 | 0.03 | 5 |
+| DOMDocument (libxml) | 9.94 | 0.05 | 5 |
+| masterminds/html5 | 45.89 | 0.23 | 5 |
+| voku/simple_html_dom | 116.09 | 0.58 | 5 |
+| symfony/dom-crawler | 46.64 | 0.23 | 5 |
+
+For this selective early-result workload, `Stream::select()` was 2.19× faster
+than JustHTML's full-parser path and used 99.3% fewer retained parser nodes in a
+controlled memory proxy. The complete input string remains in memory with both
+APIs. These gains are most relevant when a crawler needs a small number of
+early matches; late, absent, or broad matches can erase the advantage. See the
+[benchmark guide](benchmarks/README.md) for the protocol and detailed results.
 
 ## Tests
 

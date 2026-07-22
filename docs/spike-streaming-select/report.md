@@ -95,6 +95,12 @@ the median is reported. Common Crawl aggregate ratios are geometric means over
 Pruning added about 8% CPU overhead to approach A overall. Despite B's speed,
 pruned A retained 27% fewer peak live nodes overall by geometric mean.
 
+Against the full-DOM baseline, the 204 early-match document-selector cases had
+a 21.10x geometric-mean first-result latency ratio and a 130.22x peak-live-node
+ratio in favor of A/prune. Both exceed the predeclared Common Crawl gate of
+2x. This performance sample contains 100 Common Crawl documents; the separate
+correctness oracle above covers the full 1,000-document corpus.
+
 ### Wikipedia lead fixture
 
 | Scenario | DOM baseline | A/prune | B/lexical | B speedup vs A/prune |
@@ -117,6 +123,12 @@ equivalence is a hard requirement. Approach B is approximately three times
 faster and is useful as a measured performance ceiling, but even rare silent
 divergence is incompatible with the promised contract. A future lexical API
 would require a separate name and an explicitly different semantic contract.
+
+The product consequence is a deliberate middle path: users get CSS-selector
+ergonomics and JustHTML's final-DOM semantics without necessarily paying for a
+fully retained document. It is intended for selective extraction, not as a
+claim that pure-PHP selector streaming beats native C parsers, raw lexical
+scanners, or full-DOM processing on broad all-result workloads.
 
 ## Supporting records
 

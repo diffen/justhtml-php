@@ -7,6 +7,27 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-22
+
+- Add `Stream::select()` and `Stream::selectFirst()` for crawlers that need one
+  or a few known elements: supported selectors return the same selected
+  elements and content as a normal `query()`, while early matches can avoid
+  parsing and keeping the rest of the document in the parsed result.
+- Rename the advanced event iterator to `Stream::events()` to clarify that it
+  yields HTML events rather than reading a file or network stream;
+  `Stream::stream()` remains as a deprecated compatibility alias.
+- Let the CLI automatically use `Stream::select()` for supported, selective
+  selectors with `--first` or `--limit 1`, with transparent full-query fallback
+  for unsupported or broad selectors.
+- Support type, ID, class, attribute, compound/list, descendant/child,
+  selected positional pseudo-class, and restricted `:not()` selectors in the
+  targeted-extraction API; unsupported features produce a clear error.
+- Return matches in document order with their descendants. Ancestors outside a
+  match are unavailable, and overlapping results should be treated as
+  read-only while iterating.
+- Publish reproducible performance and correctness benchmarks for full parsing,
+  targeted extraction, and the advanced event API.
+
 ## [0.1.7] - 2026-07-16
 
 - Stop closing an open `<p>` element on `<br>` start tags; per the HTML spec

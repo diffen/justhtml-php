@@ -2,20 +2,12 @@
 
 declare(strict_types=1);
 
-namespace JustHTML\Experimental;
-
-use JustHTML\Selector;
-use JustHTML\SelectorComplex;
-use JustHTML\SelectorCompound;
-use JustHTML\SelectorError;
-use JustHTML\SelectorList;
-use JustHTML\SelectorMatcher;
-use JustHTML\SelectorSimple;
+namespace JustHTML;
 
 /**
- * @internal Milestone 1 spike (docs/proposal-streaming-select.md). Not public API.
+ * @internal Implementation detail of Stream::select().
  *
- * Compiles a selector for streaming evaluation: parses via the shared
+ * Compiles selectors for streaming evaluation: parses via the shared
  * Selector grammar, enforces the documented v1 subset with a recursive
  * semantic-validation pass, and derives the compile-time hazard flags the
  * ordered yield frontier depends on (see docs/spike-streaming-select/frontier.md).
@@ -55,7 +47,7 @@ final class CompiledStreamSelector
 }
 
 /**
- * @internal Spike-only.
+ * @internal Implementation detail of Stream::select().
  */
 final class SelectCompiler
 {
@@ -217,7 +209,7 @@ final class SelectCompiler
 }
 
 /**
- * @internal Spike-only.
+ * @internal Implementation detail of Stream::select().
  *
  * Answers "could this currently non-matching element become a match if the
  * html/body elements gain attributes via late start-tag merges?" — the

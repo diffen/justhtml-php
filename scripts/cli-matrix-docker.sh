@@ -100,6 +100,11 @@ for v in "${versions[@]}"; do
   assert_eq "Earth - Wikipedia" "$out"
   record_output "text_title" "$out"
 
+  # A selector outside Stream::select()'s subset falls back to full query().
+  out="$(run_php bin/justhtml "${fixture}" --selector "title:last-of-type" --format text --first)"
+  assert_eq "Earth - Wikipedia" "$out"
+  record_output "text_title_full_query_fallback" "$out"
+
   # --attr / --missing / --separator
   out="$(run_php bin/justhtml "${fixture}" --selector "a.mw-jump-link" --attr href --first)"
   assert_eq "#bodyContent" "$out"

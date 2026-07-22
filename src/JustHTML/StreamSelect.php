@@ -2,19 +2,10 @@
 
 declare(strict_types=1);
 
-namespace JustHTML\Experimental;
-
-use JustHTML\ElementNode;
-use JustHTML\Encoding;
-use JustHTML\Selector;
-use JustHTML\SelectorMatcher;
-use JustHTML\Tag;
-use JustHTML\TemplateNode;
-use JustHTML\Tokenizer;
-use JustHTML\TreeBuilder;
+namespace JustHTML;
 
 /**
- * @internal Milestone 1 spike (docs/proposal-streaming-select.md). Not public API.
+ * @internal Benchmark instrumentation for Stream::select().
  *
  * Approach A: selector observation hooked onto the real TreeBuilder. The
  * engine drives the tokenizer step by step, observes node creation and
@@ -53,7 +44,7 @@ final class StreamSelectStats
 }
 
 /**
- * @internal Spike-only. Exposes token-boundary activity so the engine only
+ * @internal Exposes token-boundary activity so the engine only
  * rescans after tokens that actually reached the tree builder, and records
  * whether the last processed token was a start tag (for source-offset
  * attribution under the match-position policy).
@@ -81,13 +72,13 @@ final class ObservingTreeBuilder extends TreeBuilder
 }
 
 /**
- * @internal Spike-only.
+ * @internal Implementation detail of Stream::select().
  */
 final class StreamSelect
 {
     /**
      * Options:
-     *  - encoding/bytes: mirror Stream::stream() input handling
+     *  - encoding/bytes: mirror Stream::events() input handling
      *  - prune: bool (benchmark variant 3 when true, variant 2 when false)
      *  - stats: StreamSelectStats to fill with instrumentation (adds overhead;
      *    keep timing runs and node-count runs separate)
@@ -103,7 +94,7 @@ final class StreamSelect
     }
 
     /** @param array<string, mixed> $opts */
-    public static function selectFirst($html, string $selector, array $opts = []): ?object
+    public static function selectFirst($html, string $selector, array $opts = []): ?SimpleDomNode
     {
         foreach (self::select($html, $selector, $opts) as $node) {
             return $node;
@@ -128,7 +119,7 @@ final class StreamSelect
 }
 
 /**
- * @internal Spike-only.
+ * @internal Implementation detail of Stream::select().
  */
 final class StreamSelectEngine
 {
@@ -236,6 +227,7 @@ final class StreamSelectEngine
 
     public function parse(string $html): \Generator
     {
+        $yieldIndex = 0;
         $this->tb = new ObservingTreeBuilder();
         $this->tokenizer = new Tokenizer($this->tb);
         $this->tb->tokenizer = $this->tokenizer;
@@ -255,7 +247,7 @@ final class StreamSelectEngine
                 $this->scan();
                 if ($this->queue && !$isEof) {
                     foreach ($this->drainYieldable() as $node) {
-                        yield $node;
+                        yield $yieldIndex++ => $node;
                     }
                 }
             }
@@ -266,7 +258,9 @@ final class StreamSelectEngine
 
         $this->eofReached = true;
         $document = $this->tb->finish();
-        yield from $this->finalSweep($document);
+        foreach ($this->finalSweep($document) as $node) {
+            yield $yieldIndex++ => $node;
+        }
     }
 
     // ------------------------------------------------------------------

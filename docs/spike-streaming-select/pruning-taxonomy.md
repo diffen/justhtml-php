@@ -1,8 +1,9 @@
 # Streaming select pruning-safety taxonomy
 
 Status: Milestone 1 spike output. This taxonomy describes the conservative
-conditions implemented by `Experimental\StreamSelect` for benchmark variant 3.
-It is not a public API guarantee.
+conditions implemented by the internal `StreamSelect` engine for benchmark
+variant 3 and the public selector-streaming API. The individual pruning rules
+remain implementation details, not a public API guarantee.
 
 ## Unit of pruning
 

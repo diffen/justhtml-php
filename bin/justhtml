@@ -17,7 +17,6 @@ if (file_exists($autoload)) {
         'FragmentContext.php',
         'Markdown.php',
         'Selector.php',
-        'Stream.php',
         'Node.php',
         'Serialize.php',
         'TreeBuilderUtils.php',
@@ -27,6 +26,9 @@ if (file_exists($autoload)) {
         'TreeBuilder.php',
         'Encoding.php',
         'JustHTML.php',
+        'SelectCompiler.php',
+        'StreamSelect.php',
+        'Stream.php',
     ];
 
     foreach ($required as $file) {
@@ -35,8 +37,10 @@ if (file_exists($autoload)) {
 }
 
 use JustHTML\JustHTML;
+use JustHTML\SelectCompiler;
 use JustHTML\SelectorError;
 use JustHTML\Serialize;
+use JustHTML\Stream;
 
 function resolve_version(string $root): string
 {
@@ -101,6 +105,27 @@ function parse_limit(string $raw): int
     }
 
     return (int)$normalized;
+}
+
+function selector_is_targeted(string $selector): bool
+{
+    try {
+        $compiled = SelectCompiler::compile($selector);
+    } catch (SelectorError $e) {
+        return false;
+    }
+
+    foreach ($compiled->prefilters as $filter) {
+        if ($filter['id'] !== null || $filter['class'] !== null) {
+            continue;
+        }
+        $tag = $filter['tag'];
+        if ($tag === null || $tag === 'html' || $tag === 'body') {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 function print_usage(int $code): void
@@ -337,10 +362,33 @@ if ($path === '-') {
     }
 }
 
-$doc = new JustHTML($html);
+$effectiveLimit = $limit;
+if ($effectiveLimit === null && $first) {
+    $effectiveLimit = 1;
+}
+
+$useTargetedSelection = $selector !== null
+    && $selector !== ''
+    && $effectiveLimit === 1
+    && !$count
+    && selector_is_targeted($selector);
 
 try {
-    $nodes = $selector ? $doc->query($selector) : [$doc->root];
+    if ($useTargetedSelection) {
+        try {
+            $node = Stream::selectFirst($html, $selector);
+            $nodes = $node === null ? [] : [$node];
+        } catch (SelectorError $streamingError) {
+            // A selector can be valid for query() but outside the streaming
+            // subset. Compilation fails before parsing, so full-query fallback
+            // does not duplicate parsing work.
+            $doc = new JustHTML($html);
+            $nodes = $doc->query($selector);
+        }
+    } else {
+        $doc = new JustHTML($html);
+        $nodes = $selector ? $doc->query($selector) : [$doc->root];
+    }
 } catch (SelectorError $e) {
     fwrite(STDERR, $e->getMessage() . PHP_EOL);
     exit(2);
@@ -359,9 +407,7 @@ if ($count) {
     exit(0);
 }
 
-if ($limit === null && $first) {
-    $limit = 1;
-}
+$limit = $effectiveLimit;
 
 if ($limit !== null && count($nodes) > $limit) {
     $nodes = array_slice($nodes, 0, $limit);

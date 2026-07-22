@@ -11,6 +11,8 @@ function lead_parser_available(string $name): bool
 {
     switch ($name) {
         case 'justhtml':
+        case 'justhtml/select':
+        case 'justhtml/events':
         case 'justhtml/stream':
         case 'domdocument':
             return true;
@@ -31,7 +33,8 @@ function lead_parser_list(): array
 {
     return [
         'justhtml',
-        'justhtml/stream',
+        'justhtml/select',
+        'justhtml/events',
         'dom/html-document',
         'domdocument',
         'masterminds/html5',
@@ -102,7 +105,18 @@ function extract_justhtml(string $html): string
     return '';
 }
 
-function extract_stream(string $html): string
+function extract_justhtml_select(string $html): string
+{
+    foreach (Stream::select($html, '#mw-content-text p') as $p) {
+        $text = normalize_text($p->toText());
+        if ($text !== '') {
+            return $text;
+        }
+    }
+    return '';
+}
+
+function extract_events(string $html): string
 {
     $inContainer = false;
     $containerDepth = 0;
@@ -110,7 +124,7 @@ function extract_stream(string $html): string
     $hasText = false;
     $segments = [];
 
-    foreach (Stream::stream($html) as [$event, $data]) {
+    foreach (Stream::events($html) as [$event, $data]) {
         if ($event === 'start') {
             [$tag, $attrs] = $data;
             $tag = (string)$tag;
@@ -255,8 +269,11 @@ function extract_lead(string $parser, string $html): string
     switch ($parser) {
         case 'justhtml':
             return extract_justhtml($html);
+        case 'justhtml/select':
+            return extract_justhtml_select($html);
+        case 'justhtml/events':
         case 'justhtml/stream':
-            return extract_stream($html);
+            return extract_events($html);
         case 'domdocument':
             return extract_domdocument($html);
         case 'dom/html-document':

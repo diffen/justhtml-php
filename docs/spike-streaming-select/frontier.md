@@ -1,6 +1,6 @@
 # Ordered yield frontier (Milestone 1 spike output)
 
-Status: implemented in `src/JustHTML/Experimental/StreamSelect.php` (approach A);
+Status: implemented in `src/JustHTML/StreamSelect.php` (approach A);
 verified against the differential oracle (`spike/differential.php`). This
 document is the required Milestone 1 deliverable from
 [the proposal](../proposal-streaming-select.md): the rules under which a

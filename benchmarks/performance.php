@@ -165,6 +165,9 @@ function run_perf_with_rss(
 
     $cmd_parts = [
         PHP_BINARY,
+        '-dxdebug.mode=off',
+        '-dopcache.enable_cli=1',
+        '-derror_reporting=' . error_reporting(),
         __FILE__,
         '--child',
         '--parser',

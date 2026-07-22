@@ -4,15 +4,39 @@
 > selected and approach B was archived. See the
 > [spike report](spike-streaming-select/report.md) for the definition of a
 > spike, measured results, and final decision.
+>
+> Naming note: after this work, the low-level event API was renamed to
+> `Stream::events()` to avoid implying incremental file or network I/O.
+> Historical passages below retain the original `Stream::stream()` name.
+> The final public `selectFirst()` return type is `?SimpleDomNode`, the common node
+> base, because the parser represents the `html` and `body` elements with that
+> base class. Historical passages retain the originally proposed
+> `?ElementNode` signature.
 
-- **Status:** Revised draft (v5). Approved as the Milestone 1 spike specification
-  ([review](proposal-streaming-select-review.md), v4 re-review); this revision
-  tightens the benchmark design per that re-review. Milestone 0 is complete and
-  Milestone 1 can begin. Public API approval remains gated on spike results.
-- **Date:** 2026-07-17
+- **Status:** Implemented. The spike selected approach A, the public API is
+  stabilized, and the remaining test, benchmark, and documentation milestones
+  are complete. See the [spike report](spike-streaming-select/report.md).
+- **Date:** 2026-07-18
 - **Scope:** JustHTML PHP library — streaming API, benchmarks, docs
 
-## Summary
+## Outcome
+
+The proposal shipped as `Stream::select()` and `Stream::selectFirst()`. The
+product is deliberately positioned between two existing paths:
+
+- Unlike a full JustHTML DOM, selector streaming can release stable selective
+  matches early and avoid retaining the whole document tree.
+- Unlike raw tokenizer-event streaming, it preserves final-DOM `query()`
+  semantics for the documented selector subset, including malformed-HTML tree
+  recovery.
+
+At completion, the public lead-extraction benchmark measured 25.63 ms for
+selector streaming versus 56.10 ms for the full JustHTML DOM. The controlled spike
+measured 172 versus 24,298 peak live nodes. The lexical comparator was about
+three times faster than approach A overall, but its semantic divergences made
+it unsuitable for the public exactness contract.
+
+## Original proposal
 
 Add a selector-driven streaming API, `Stream::select($html, $selector)`, that yields
 matched elements as completed `ElementNode` results in a detached retained tree —
@@ -410,17 +434,16 @@ oracle. The oracle is DOM equivalence (under equivalent input decoding options):
 Fragment contexts are out of v1 scope: the proposed API accepts documents only.
 Fragment selection is future work alongside a fragment-input API.
 
-## Docs and positioning (last, measurement-backed)
+## Docs and positioning (completed, measurement-backed)
 
-- Add `justhtml/select` rows to `benchmarks/lead_paragraph.php` (baseline-checked)
+- Added `justhtml/select` rows to `benchmarks/lead_paragraph.php` (baseline-checked)
   and the performance suite.
-- Rewrite `Streaming.md`: `Stream::select()` as the primary interface; keep the
-  low-level event API documented for advanced use; replace the 70-line example.
-- Refresh the README comparison table regardless of this feature — it shows
+- Rewrote `Streaming.md` with `Stream::select()` as the primary interface and
+  kept the low-level event API documented for advanced use.
+- Refreshed the README comparison table, which had shown
   12.6 ms/doc against a measured 4.43, underselling the library ~3×. (Standalone
-  value; can land immediately.)
-- README repositioning around streaming selection happens **after** the benchmark
-  plan produces defensible numbers, using those numbers.
+  value independent of the streaming feature.)
+- Repositioned the README around streaming selection using the measured results.
 
 ## Future work (out of scope)
 
@@ -432,8 +455,8 @@ Fragment selection is future work alongside a fragment-input API.
 - **Tree-builder optimization** (separate agreed track): profile `TreeBuilder`/`Node`
   to close the gap with masterminds/html5. Independent; parallelizable — and any
   wins directly benefit approach A.
-- **Lexical-semantics streaming API**: only if approach A fails its gate, and only
-  as a separate proposal with a distinct name and contract.
+- **Lexical-semantics streaming API**: only through a separate proposal with a
+  distinct name and explicitly different contract.
 
 ## Non-goals
 
@@ -448,14 +471,14 @@ Fragment selection is future work alongside a fragment-input API.
 | # | Deliverable | Gate |
 |---|-------------|------|
 | 0 | Semantic contract decided; implementation-readiness, pre-benchmark clarifications, and benchmark-design details addressed | **Complete** — approved as spike spec at v4 re-review; benchmark tightening incorporated in v5 |
-| 1 | Spike: prototype approaches A and B (private/experimental, no public API); required outputs: **ordered yield frontier**, pruning-safety taxonomy, 4-variant benchmark per the operational protocol | — |
-| 2 | Go/no-go per the predeclared operational gate | Decision with numbers |
-| 3 | Finalize contract details in this doc: emission order, node ownership/aliasing, yield-frontier rules, EOF, exact selector grammar | API sign-off |
-| 4 | Targeted tree-construction + differential + contract tests | — |
-| 5 | Public `Stream::select()` / `selectFirst()` stabilized | — |
-| 6 | Benchmarks published, `Streaming.md` rewrite, README repositioning from measured results | — |
+| 1 | Spike: prototype approaches A and B (private/experimental, no public API); required outputs: **ordered yield frontier**, pruning-safety taxonomy, 4-variant benchmark per the operational protocol | **Complete** — both approaches measured; design records and lexical source archived at `stream-select-spike-2026-07-18` |
+| 2 | Go/no-go per the predeclared operational gate | **Complete** — approach A passed correctness, lead latency/retention, and maintainability gates; see the spike report |
+| 3 | Finalize contract details in this doc: emission order, node ownership/aliasing, yield-frontier rules, EOF, exact selector grammar | **Complete** |
+| 4 | Targeted tree-construction + differential + contract tests | **Complete** — targeted oracle, Common Crawl 1k oracle, and public API regressions pass |
+| 5 | Public `Stream::select()` / `selectFirst()` stabilized | **Complete** |
+| 6 | Benchmarks published, `Streaming.md` rewrite, README repositioning from measured results | **Complete** |
 
-The README table refresh (stale performance numbers) is independent and can land now.
+The independent README performance-table refresh landed with the public API.
 
 ---
 

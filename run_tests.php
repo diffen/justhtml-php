@@ -36,8 +36,10 @@ $required = [
     'TreeBuilder.php',
     'Encoding.php',
     'JustHTML.php',
-    'Stream.php',
     'Markdown.php',
+    'SelectCompiler.php',
+    'StreamSelect.php',
+    'Stream.php',
 ];
 
 foreach ($required as $file) {
@@ -1576,6 +1578,106 @@ function run_api_regression_tests(bool $show_failures = false): array
                 && $metaName === 'shift_jis'
                 && $metaUserDefined === 'windows-1252';
         },
+        'stream select matches full DOM on tree-construction hazards' => static function (): bool {
+            $cases = [
+                ['<p>one<p>two<ul><li>a<li>b</ul>', 'p, li:nth-child(2)'],
+                ['<table><div class=f>x</div><tr><td>c</td></tr></table>', '.f, tbody td'],
+                ['<p><b>one<div class=x>two</div></b>', 'b, div.x'],
+                ['<p id=p>first</p><div id=d>second</div><body class=x>', 'body.x p, div#d'],
+                ['<template><p class=t>tpl</p></template><p class=t>real</p>', 'p.t'],
+                ['<svg><foreignObject><p class=z>in</p></foreignObject></svg>', 'svg p'],
+                ['<div class=open><p class=also-open>never closed', 'div.open, p.also-open'],
+            ];
+            foreach ($cases as [$html, $selector]) {
+                $doc = new JustHTML($html);
+                $expected = array_map(static function ($node): string {
+                    return $node->toTestFormat();
+                }, $doc->query($selector));
+                $actual = [];
+                foreach (\JustHTML\Stream::select($html, $selector) as $node) {
+                    if (!$node instanceof \JustHTML\ElementNode) {
+                        return false;
+                    }
+                    $actual[] = $node->toTestFormat();
+                }
+                if ($actual !== $expected) {
+                    return false;
+                }
+            }
+            return true;
+        },
+        'stream select public contract' => static function (): bool {
+            $matches = iterator_to_array(\JustHTML\Stream::select(
+                '<p class="a b">one</p><p class=a>two</p>',
+                '.a, .b, p'
+            ), false);
+            $first = \JustHTML\Stream::selectFirst('<main><p id=x>ok</p></main>', 'main > p#x');
+            $missing = \JustHTML\Stream::selectFirst('<p>x</p>', '.missing');
+            return count($matches) === 2
+                && $matches[0]->parent === null
+                && $matches[0]->toText() === 'one'
+                && $matches[1]->toText() === 'two'
+                && $first instanceof \JustHTML\ElementNode
+                && ($first->attrs['id'] ?? null) === 'x'
+                && $missing === null;
+        },
+        'stream select supports html and body roots' => static function (): bool {
+            $html = \JustHTML\Stream::selectFirst('<title>x</title><p>y</p>', 'html');
+            $body = \JustHTML\Stream::selectFirst('<title>x</title><p>y</p>', 'body');
+            return $html instanceof \JustHTML\SimpleDomNode
+                && $html->name === 'html'
+                && $body instanceof \JustHTML\SimpleDomNode
+                && $body->name === 'body';
+        },
+        'stream select preserves keys across early and EOF results' => static function (): bool {
+            $matches = iterator_to_array(\JustHTML\Stream::select(
+                '<p id=a>a</p><selectedcontent></selectedcontent><p id=b>b</p>',
+                'p'
+            ));
+            return array_keys($matches) === [0, 1]
+                && ($matches[0]->attrs['id'] ?? null) === 'a'
+                && ($matches[1]->attrs['id'] ?? null) === 'b';
+        },
+        'stream select nested results share detached tree' => static function (): bool {
+            $generator = \JustHTML\Stream::select(
+                '<div class=m><span><div class=m>x</div></span></div>',
+                'div.m'
+            );
+            $generator->rewind();
+            $outer = $generator->current();
+            if (!$outer instanceof \JustHTML\ElementNode || $outer->parent !== null) {
+                return false;
+            }
+            $nested = $outer->queryFirst('div.m');
+            if (!$nested instanceof \JustHTML\ElementNode) {
+                return false;
+            }
+            $nested->attrs['consumer'] = 'visible';
+            $generator->next();
+            $inner = $generator->current();
+            return $inner === $nested
+                && $inner->parent !== null
+                && ($inner->attrs['consumer'] ?? null) === 'visible';
+        },
+        'stream select validates selectors eagerly' => static function (): bool {
+            foreach (['div + p', 'p:last-child', 'p:empty', 'div,'] as $selector) {
+                try {
+                    // Do not iterate: the exception is required at call time.
+                    \JustHTML\Stream::select('<p>x</p>', $selector);
+                    return false;
+                } catch (\JustHTML\SelectorError $e) {
+                    // Expected.
+                }
+            }
+            return true;
+        },
+        'stream select byte decoding mirrors events' => static function (): bool {
+            $node = \JustHTML\Stream::selectFirst("<p>\xE9</p>", 'p', 'windows-1252', true);
+            $nullInput = \JustHTML\Stream::selectFirst(null, 'p');
+            return $node instanceof \JustHTML\ElementNode
+                && $node->toText() === 'é'
+                && $nullInput === null;
+        },
         'invalid DOM move is atomic' => static function (): bool {
             $first = new \JustHTML\SimpleDomNode('first');
             $second = new \JustHTML\SimpleDomNode('second');
@@ -1620,23 +1722,23 @@ function run_api_regression_tests(bool $show_failures = false): array
             }
             return false;
         },
-        'stream SVG CDATA' => static function (): bool {
-            $events = iterator_to_array(\JustHTML\Stream::stream('<svg><![CDATA[x<y]]></svg>'));
+        'events SVG CDATA' => static function (): bool {
+            $events = iterator_to_array(\JustHTML\Stream::events('<svg><![CDATA[x<y]]></svg>'));
             return isset($events[1]) && $events[1] === ['text', 'x<y'];
         },
-        'stream integration-point CDATA' => static function (): bool {
-            $svg = iterator_to_array(\JustHTML\Stream::stream(
+        'events integration-point CDATA' => static function (): bool {
+            $svg = iterator_to_array(\JustHTML\Stream::events(
                 '<svg><foreignObject><![CDATA[x<y]]></foreignObject></svg>'
             ));
-            $math = iterator_to_array(\JustHTML\Stream::stream(
+            $math = iterator_to_array(\JustHTML\Stream::events(
                 '<math><mi><![CDATA[x<y]]></mi></math>'
             ));
             return isset($svg[2], $math[2])
                 && $svg[2] === ['text', 'x<y']
                 && $math[2] === ['text', 'x<y'];
         },
-        'stream end-tag repair respects integration boundaries' => static function (): bool {
-            $events = iterator_to_array(\JustHTML\Stream::stream(
+        'events end-tag repair respects integration boundaries' => static function (): bool {
+            $events = iterator_to_array(\JustHTML\Stream::events(
                 '<svg><foreignObject><div></svg></div></foreignObject><![CDATA[x]]></svg>'
             ));
             foreach ($events as $event) {
@@ -1645,6 +1747,11 @@ function run_api_regression_tests(bool $show_failures = false): array
                 }
             }
             return false;
+        },
+        'deprecated stream alias matches events' => static function (): bool {
+            $html = '<p>Hello &amp; goodbye</p>';
+            return iterator_to_array(\JustHTML\Stream::stream($html))
+                === iterator_to_array(\JustHTML\Stream::events($html));
         },
         'DOM integration-point raw text' => static function (): bool {
             $doc = new JustHTML(

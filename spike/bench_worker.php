@@ -28,12 +28,9 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/../benchmarks/bootstrap.php';
-require_once __DIR__ . '/../src/JustHTML/Experimental/SelectCompiler.php';
-require_once __DIR__ . '/../src/JustHTML/Experimental/StreamSelect.php';
-
 use JustHTML\JustHTML;
-use JustHTML\Experimental\StreamSelect;
-use JustHTML\Experimental\StreamSelectStats;
+use JustHTML\StreamSelect;
+use JustHTML\StreamSelectStats;
 
 $opts = [
     'file' => null,

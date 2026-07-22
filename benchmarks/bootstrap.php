@@ -19,7 +19,6 @@ $required = [
     'FragmentContext.php',
     'Markdown.php',
     'Selector.php',
-    'Stream.php',
     'Node.php',
     'Serialize.php',
     'TreeBuilderUtils.php',
@@ -29,6 +28,9 @@ $required = [
     'TreeBuilder.php',
     'Encoding.php',
     'JustHTML.php',
+    'SelectCompiler.php',
+    'StreamSelect.php',
+    'Stream.php',
 ];
 
 foreach ($required as $file) {

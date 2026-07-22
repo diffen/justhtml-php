@@ -19,11 +19,9 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/../benchmarks/bootstrap.php';
-require_once __DIR__ . '/../src/JustHTML/Experimental/SelectCompiler.php';
-require_once __DIR__ . '/../src/JustHTML/Experimental/StreamSelect.php';
-
 use JustHTML\JustHTML;
-use JustHTML\Experimental\StreamSelect;
+use JustHTML\Stream;
+use JustHTML\StreamSelect;
 
 /**
  * Predeclared selector battery (fixed before any benchmark measurement; the
@@ -218,7 +216,7 @@ function compare_case(string $html, string $selector, array &$counters, string $
             return StreamSelect::select($html, $selector);
         },
         'A/prune' => static function () use ($html, $selector) {
-            return StreamSelect::select($html, $selector, ['prune' => true]);
+            return Stream::select($html, $selector);
         },
     ];
 
@@ -246,7 +244,7 @@ function check_result_contracts(array &$counters, bool $verbose): void
     $counters['total']++;
     $ids = [];
     $firstWasDetached = false;
-    foreach (StreamSelect::select('<p id=a>A</p><p id=b>B</p>', 'p') as $node) {
+    foreach (Stream::select('<p id=a>A</p><p id=b>B</p>', 'p') as $node) {
         $ids[] = $node->attrs['id'] ?? '';
         if (count($ids) !== 1) {
             continue;
@@ -274,7 +272,7 @@ function check_result_contracts(array &$counters, bool $verbose): void
     }
 
     $counters['total']++;
-    $nested = iterator_to_array(StreamSelect::select(
+    $nested = iterator_to_array(Stream::select(
         '<div class=m><span><div class=m>x</div></span></div>',
         'div.m'
     ), false);
