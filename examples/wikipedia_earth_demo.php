@@ -52,10 +52,18 @@ function truncate(string $text, int $limit = 200): string
     return substr($text, 0, $limit) . '...';
 }
 
-$heading = $doc->query('#firstHeading')[0] ?? null;
-$lead = $doc->query('#mw-content-text p:not(:empty)')[0] ?? null;
-$infobox = $doc->query('table.infobox')[0] ?? null;
-$firstLink = $lead ? ($lead->query('a')[0] ?? null) : null;
+$heading = $doc->queryFirst('#firstHeading');
+$infobox = $doc->queryFirst('table.infobox');
+
+$lead = null;
+foreach ($doc->query('#mw-content-text p') as $paragraph) {
+    if ($paragraph->toText() !== '') {
+        $lead = $paragraph;
+        break;
+    }
+}
+
+$firstLink = $lead !== null ? $lead->queryFirst('a') : null;
 
 echo "Fixture: {$fixture}\n";
 echo "Bytes: " . strlen($html) . "\n";
@@ -63,12 +71,12 @@ echo "Parse errors: " . count($doc->errors) . "\n";
 echo "\n";
 
 echo "== Heading ==\n";
-if ($heading) {
+if ($heading !== null) {
     echo "Tag: {$heading->name}\n";
     $parentName = $heading->parent ? $heading->parent->name : '(none)';
     echo "Parent: {$parentName}\n";
     echo "Children: " . count($heading->children ?? []) . "\n";
-    echo "Text: " . $heading->toText() . "\n";
+    echo "Normalized text: " . $heading->toText() . "\n";
     echo "Classes: " . implode(', ', class_list($heading)) . "\n";
     echo "Matches h1#firstHeading: " . ($heading->matches('h1#firstHeading') ? 'true' : 'false') . "\n";
     echo "Outer HTML: " . truncate($heading->toHtml(0, 2, false), 160) . "\n";
@@ -79,8 +87,8 @@ if ($heading) {
 echo "\n";
 
 echo "== Lead paragraph ==\n";
-if ($lead) {
-    echo "Text: " . truncate($lead->toText(), 200) . "\n";
+if ($lead !== null) {
+    echo "Normalized text: " . truncate($lead->toText(), 200) . "\n";
     echo "Markdown: " . truncate($lead->toMarkdown(), 200) . "\n";
     echo "Outer HTML: " . truncate($lead->toHtml(0, 2, false), 200) . "\n";
     echo "Inner HTML: " . truncate(inner_html($lead), 200) . "\n";
@@ -90,9 +98,9 @@ if ($lead) {
 echo "\n";
 
 echo "== First link in lead ==\n";
-if ($firstLink) {
+if ($firstLink !== null) {
     $href = $firstLink->attrs['href'] ?? '';
-    echo "Text: " . $firstLink->toText() . "\n";
+    echo "Normalized text: " . $firstLink->toText() . "\n";
     echo "Href: {$href}\n";
     echo "Matches a[href]: " . ($firstLink->matches('a[href]') ? 'true' : 'false') . "\n";
     echo "Attributes: " . json_encode($firstLink->attrs ?? [], JSON_PRETTY_PRINT) . "\n";
@@ -102,12 +110,13 @@ if ($firstLink) {
 echo "\n";
 
 echo "== Infobox ==\n";
-if ($infobox) {
+if ($infobox !== null) {
     $rows = $infobox->query('tr');
+    $caption = $infobox->queryFirst('caption');
     echo "Rows: " . count($rows) . "\n";
     echo "Classes: " . implode(', ', class_list($infobox)) . "\n";
+    echo "Caption: " . ($caption !== null ? $caption->toText() : '(none)') . "\n";
     echo "Outer HTML (truncated): " . truncate($infobox->toHtml(0, 2, false), 200) . "\n";
-    echo "Text (truncated): " . truncate($infobox->toText(), 200) . "\n";
 } else {
     echo "Infobox not found.\n";
 }

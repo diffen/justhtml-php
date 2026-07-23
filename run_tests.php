@@ -14,6 +14,7 @@ use JustHTML\Serialize;
 use JustHTML\Tag;
 use JustHTML\Tokenizer;
 use JustHTML\TokenizerOpts;
+use JustHTML\Text;
 use JustHTML\TreeBuilder;
 use JustHTML\TokenSinkResult;
 use JustHTML\EOFToken;
@@ -21,6 +22,7 @@ use JustHTML\Constants;
 
 $required = [
     'Str.php',
+    'Text.php',
     'Errors.php',
     'Constants.php',
     'Entities.php',
@@ -1470,6 +1472,106 @@ function run_selector_tests(bool $show_failures = false, int $max_failures = 0):
 function run_api_regression_tests(bool $show_failures = false): array
 {
     $tests = [
+        'DOM textContent and normalized toText contracts' => static function (): bool {
+            $doc = new JustHTML(
+                "<p id=x> \tEarth is a <a>planet</a>.<!--hidden-->\r\n"
+                . "<span>Next</span>\u{00A0}line </p>"
+            );
+            $paragraph = $doc->queryFirst('#x');
+            if ($paragraph === null) {
+                return false;
+            }
+            return $paragraph->textContent === " \tEarth is a planet.\nNext\u{00A0}line "
+                && $paragraph->toText() === "Earth is a planet. Next\u{00A0}line"
+                && isset($paragraph->textContent)
+                && $paragraph->text === '';
+        },
+        'DOM textContent node types and template boundary' => static function (): bool {
+            $doc = new JustHTML(
+                '<!doctype html><p>a<!--comment--><br>b</p><template><b>x</b></template>'
+            );
+            $paragraph = $doc->queryFirst('p');
+            $template = $doc->queryFirst('template');
+            if ($paragraph === null || $template === null || $template->templateContent === null) {
+                return false;
+            }
+            $comment = $paragraph->children[1] ?? null;
+            $doctype = $doc->root->children[0] ?? null;
+            return $doc->root->textContent === null
+                && !isset($doc->root->textContent)
+                && $doctype !== null
+                && $doctype->textContent === null
+                && !isset($doctype->textContent)
+                && $paragraph->textContent === 'ab'
+                && $comment !== null
+                && $comment->textContent === 'comment'
+                && $template->textContent === ''
+                && isset($template->textContent)
+                && $template->templateContent->textContent === 'x';
+        },
+        'textContent is computed and read-only' => static function (): bool {
+            $doc = new JustHTML('<p>a</p>');
+            $paragraph = $doc->queryFirst('p');
+            if ($paragraph === null) {
+                return false;
+            }
+            $paragraph->appendChild(new \JustHTML\TextNode('b'));
+            if ($paragraph->textContent !== 'ab') {
+                return false;
+            }
+            try {
+                $paragraph->textContent = 'replacement';
+                return false;
+            } catch (\LogicException $e) {
+                // Expected.
+            }
+            @$paragraph->callerMetadata = 'kept';
+            return $paragraph->callerMetadata === 'kept';
+        },
+        'parsed DOM whitespace preservation' => static function (): bool {
+            $doc = new JustHTML("<pre>\nA\r\n&amp;</pre><textarea>\nB\rC</textarea>");
+            $pre = $doc->queryFirst('pre');
+            $textarea = $doc->queryFirst('textarea');
+            return $pre !== null
+                && $textarea !== null
+                && $pre->textContent === "A\n&"
+                && $textarea->textContent === "B\nC";
+        },
+        'toText rejects legacy arguments' => static function (): bool {
+            $doc = new JustHTML('<p> x </p>');
+            $paragraph = $doc->queryFirst('p');
+            if ($paragraph === null || $paragraph->toText() !== 'x') {
+                return false;
+            }
+            $calls = [
+                static function () use ($paragraph): void {
+                    $paragraph->toText('');
+                },
+                static function () use ($paragraph): void {
+                    $paragraph->toText('', false);
+                },
+                static function (): void {
+                    (new \JustHTML\TextNode('x'))->toText('');
+                },
+                static function () use ($doc): void {
+                    $doc->toText('');
+                },
+            ];
+            if (PHP_VERSION_ID >= 80000) {
+                $calls[] = static function () use ($paragraph): void {
+                    call_user_func_array([$paragraph, 'toText'], ['separator' => '']);
+                };
+            }
+            foreach ($calls as $call) {
+                try {
+                    $call();
+                    return false;
+                } catch (\Error $e) {
+                    // Expected.
+                }
+            }
+            return true;
+        },
         'template and raw-text serialization' => static function (): bool {
             $doc = new JustHTML('<template><b>x</b></template><script>if (a < b && c > d) {}</script>');
             $html = $doc->toHtml(false);
@@ -1485,7 +1587,7 @@ function run_api_regression_tests(bool $show_failures = false): array
             $html = $doc->toHtml();
             $roundtrip = new JustHTML($html);
             $paragraph = $roundtrip->queryFirst('p');
-            return $paragraph !== null && $paragraph->toText('', false) === 'ab';
+            return $paragraph !== null && $paragraph->textContent === 'ab';
         },
         'foreign namespace serialization' => static function (): bool {
             $doc = new JustHTML(
@@ -1758,7 +1860,7 @@ function run_api_regression_tests(bool $show_failures = false): array
                 '<svg><foreignObject><script>if(a<b){c>d}</script></foreignObject></svg>'
             );
             $script = $doc->queryFirst('script');
-            return $script !== null && $script->toText('', false) === 'if(a<b){c>d}';
+            return $script !== null && $script->textContent === 'if(a<b){c>d}';
         },
         'fragment tokenizer states' => static function (): bool {
             $title = new JustHTML('A&amp;B&#x43;', [
@@ -1767,13 +1869,13 @@ function run_api_regression_tests(bool $show_failures = false): array
             $xmp = new JustHTML('A<b>B</b>', [
                 'fragment_context' => new FragmentContext('xmp'),
             ]);
-            return $title->root->toText('', false) === 'A&BC'
+            return Text::extractableRawText($title->root) === 'A&BC'
                 && count($xmp->query('b')) === 0
-                && $xmp->root->toText('', false) === 'A<b>B</b>';
+                && Text::extractableRawText($xmp->root) === 'A<b>B</b>';
         },
         'leading UTF-8 BOM discarded' => static function (): bool {
             $doc = new JustHTML("\xEF\xBB\xBF<p>x</p>");
-            return $doc->root->toText('', false) === 'x';
+            return Text::extractableRawText($doc->root) === 'x';
         },
         'CR-only error positions' => static function (): bool {
             $doc = new JustHTML("<div>\r<@>", ['collect_errors' => true]);
@@ -1828,7 +1930,7 @@ function run_api_regression_tests(bool $show_failures = false): array
             $name = str_repeat('a', 2000);
             $doc = new JustHTML('<p>&' . $name . ';</p>');
             $paragraph = $doc->queryFirst('p');
-            return $paragraph !== null && $paragraph->toText('', false) === '&' . $name . ';';
+            return $paragraph !== null && $paragraph->textContent === '&' . $name . ';';
         },
         'br does not close an open paragraph' => static function (): bool {
             $doc = new JustHTML('<p>a<br>b</p>');

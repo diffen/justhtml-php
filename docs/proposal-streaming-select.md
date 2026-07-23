@@ -158,8 +158,9 @@ Stream::selectFirst($html, string $selector, ?string $encoding = null, bool $byt
   (including queued ones not yet yielded). Yielded nodes should be treated as
   read-only during iteration. Independent detached copies were considered and
   rejected: cloning nested subtrees can become quadratic for deeply nested matches.
-- Supported on yielded nodes: attribute access, `toText()`, `toMarkdown()`,
-  serialization, and descendant `query()`/`queryFirst()` within the retained tree.
+- Supported on yielded nodes: attribute access, DOM-compatible `textContent`,
+  normalized `toText()`, `toMarkdown()`, serialization, and descendant
+  `query()`/`queryFirst()` within the retained tree.
 - **Not supported** (documented): ancestor-dependent operations above the retained
   root — `->parent` navigation past it, and `matches()` against selectors that depend
   on ancestors outside the retained tree.

@@ -6,8 +6,19 @@ require_once __DIR__ . '/../vendor/autoload.php';
 
 use JustHTML\JustHTML;
 
-$doc = new JustHTML('<main><p class="intro">Hello</p><p>World</p></main>');
-$nodes = $doc->query('main p.intro');
-foreach ($nodes as $node) {
-    echo $node->toText() . PHP_EOL;
+$doc = new JustHTML(
+    '<main><p class="intro">Hello <strong>world</strong>!</p><p>Second paragraph.</p></main>'
+);
+
+$intro = $doc->queryFirst('main > p.intro');
+$paragraphs = $doc->query('main p');
+
+if ($intro === null) {
+    throw new RuntimeException('Intro paragraph was not found');
 }
+
+echo 'Intro: ' . $intro->toText() . PHP_EOL;
+echo 'Paragraphs: ' . count($paragraphs) . PHP_EOL;
+echo 'Matches main > p.intro: '
+    . ($intro->matches('main > p.intro') ? 'true' : 'false')
+    . PHP_EOL;

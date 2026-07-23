@@ -10,6 +10,7 @@ if (file_exists($autoload)) {
 } else {
     $required = [
         'Str.php',
+        'Text.php',
         'Errors.php',
         'Constants.php',
         'Entities.php',
@@ -41,6 +42,7 @@ use JustHTML\SelectCompiler;
 use JustHTML\SelectorError;
 use JustHTML\Serialize;
 use JustHTML\Stream;
+use JustHTML\Text;
 
 function resolve_version(string $root): string
 {
@@ -107,6 +109,45 @@ function parse_limit(string $raw): int
     return (int)$normalized;
 }
 
+function decode_cli_escapes(string $value, string $option): string
+{
+    $decoded = '';
+    $length = strlen($value);
+    for ($i = 0; $i < $length; $i++) {
+        $ch = $value[$i];
+        if ($ch !== '\\') {
+            $decoded .= $ch;
+            continue;
+        }
+        if ($i + 1 >= $length) {
+            fwrite(STDERR, "Invalid {$option} value: incomplete escape at end\n");
+            exit(1);
+        }
+        $escape = $value[++$i];
+        switch ($escape) {
+            case 'n':
+                $decoded .= "\n";
+                break;
+            case 'r':
+                $decoded .= "\r";
+                break;
+            case 't':
+                $decoded .= "\t";
+                break;
+            case '\\':
+                $decoded .= '\\';
+                break;
+            case '0':
+                $decoded .= "\0";
+                break;
+            default:
+                fwrite(STDERR, "Invalid {$option} escape: \\{$escape}\n");
+                exit(1);
+        }
+    }
+    return $decoded;
+}
+
 function selector_is_targeted(string $selector): bool
 {
     try {
@@ -142,11 +183,14 @@ Options:
   --missing <value>  Attr-only: placeholder for missing attributes (default: __MISSING__)
   --first            Only output first matching node
   --limit <n>        Only output first N matching nodes
-  --separator <s>    Text-only: join string between text nodes (default: single space);
-                     Attr-only: join attributes (default: tab)
-  --strip            Text-only: strip each text node and drop empty segments (default)
-  --no-strip         Text-only: preserve text node whitespace
-  --count            Print number of matching nodes (incompatible with --first, --limit, --format, --attr)
+  --separator <s>    Join matched output records (escapes: \\n, \\r, \\t, \\\\, \\0)
+  --field-separator <s>
+                     Attr-only: join repeated attribute fields (default: \\t)
+  --whitespace <mode>
+                     Text-only: normalize or preserve parsed DOM whitespace
+                     (default: normalize)
+  --count            Print number of matching nodes (incompatible with
+                     --first, --limit, --format, --attr, --separator)
   --version          Print version information
   -h, --help         Show this help
 TEXT;
@@ -168,9 +212,12 @@ $attrNames = [];
 $missing = '__MISSING__';
 $first = false;
 $limit = null;
-$separator = ' ';
+$separator = null;
 $separatorExplicit = false;
-$strip = true;
+$fieldSeparator = "\t";
+$fieldSeparatorExplicit = false;
+$whitespace = 'normalize';
+$whitespaceExplicit = false;
 $count = false;
 $path = null;
 
@@ -291,23 +338,46 @@ for ($i = 1; $i < $argc; $i++) {
             fwrite(STDERR, "Missing value for --separator\n");
             exit(1);
         }
-        $separator = $argv[++$i];
+        $separator = decode_cli_escapes($argv[++$i], '--separator');
         $separatorExplicit = true;
         continue;
     }
     if (strpos($arg, '--separator=') === 0) {
-        $separator = substr($arg, strlen('--separator='));
+        $separator = decode_cli_escapes(substr($arg, strlen('--separator=')), '--separator');
         $separatorExplicit = true;
         continue;
     }
 
-    if ($arg === '--strip') {
-        $strip = true;
+    if ($arg === '--field-separator') {
+        if ($i + 1 >= $argc) {
+            fwrite(STDERR, "Missing value for --field-separator\n");
+            exit(1);
+        }
+        $fieldSeparator = decode_cli_escapes($argv[++$i], '--field-separator');
+        $fieldSeparatorExplicit = true;
+        continue;
+    }
+    if (strpos($arg, '--field-separator=') === 0) {
+        $fieldSeparator = decode_cli_escapes(
+            substr($arg, strlen('--field-separator=')),
+            '--field-separator'
+        );
+        $fieldSeparatorExplicit = true;
         continue;
     }
 
-    if ($arg === '--no-strip') {
-        $strip = false;
+    if ($arg === '--whitespace') {
+        if ($i + 1 >= $argc) {
+            fwrite(STDERR, "Missing value for --whitespace\n");
+            exit(1);
+        }
+        $whitespace = $argv[++$i];
+        $whitespaceExplicit = true;
+        continue;
+    }
+    if (strpos($arg, '--whitespace=') === 0) {
+        $whitespace = substr($arg, strlen('--whitespace='));
+        $whitespaceExplicit = true;
         continue;
     }
 
@@ -329,9 +399,17 @@ if ($path === null) {
     print_usage(1);
 }
 
+if ($whitespace !== 'normalize' && $whitespace !== 'preserve') {
+    fwrite(STDERR, "Invalid value for --whitespace: {$whitespace} (expected normalize or preserve)\n");
+    exit(1);
+}
+
 if ($count) {
-    if ($first || $limit !== null || $formatExplicit || $attrNames) {
-        fwrite(STDERR, "--count cannot be combined with --first, --limit, --format, or --attr\n");
+    if ($first || $limit !== null || $formatExplicit || $attrNames || $separatorExplicit) {
+        fwrite(
+            STDERR,
+            "--count cannot be combined with --first, --limit, --format, --attr, or --separator\n"
+        );
         exit(1);
     }
 }
@@ -346,6 +424,16 @@ if ($attrNames) {
         fwrite(STDERR, "--attr cannot be combined with --format, --inner, --outer, or --count\n");
         exit(1);
     }
+}
+
+if ($fieldSeparatorExplicit && !$attrNames) {
+    fwrite(STDERR, "--field-separator requires --attr\n");
+    exit(1);
+}
+
+if ($whitespaceExplicit && ($format !== 'text' || $attrNames || $count)) {
+    fwrite(STDERR, "--whitespace requires --format text\n");
+    exit(1);
 }
 
 if ($path === '-') {
@@ -415,7 +503,6 @@ if ($limit !== null && count($nodes) > $limit) {
 
 if ($attrNames) {
     $outputs = [];
-    $attrSeparator = $separatorExplicit ? $separator : "\t";
     foreach ($nodes as $node) {
         $attrs = $node->attrs ?? [];
         $fields = [];
@@ -427,9 +514,10 @@ if ($attrNames) {
                 $fields[] = $missing;
             }
         }
-        $outputs[] = implode($attrSeparator, $fields);
+        $outputs[] = implode($fieldSeparator, $fields);
     }
-    fwrite(STDOUT, implode("\n", $outputs) . PHP_EOL);
+    $recordSeparator = $separatorExplicit ? (string)$separator : "\n";
+    fwrite(STDOUT, implode($recordSeparator, $outputs) . PHP_EOL);
     exit(0);
 }
 
@@ -438,16 +526,20 @@ if ($format === 'html') {
     foreach ($nodes as $node) {
         $outputs[] = $inner ? inner_html($node) : $node->toHtml();
     }
-    fwrite(STDOUT, implode("\n", $outputs) . PHP_EOL);
+    $recordSeparator = $separatorExplicit ? (string)$separator : "\n";
+    fwrite(STDOUT, implode($recordSeparator, $outputs) . PHP_EOL);
     exit(0);
 }
 
 if ($format === 'text') {
     $outputs = [];
     foreach ($nodes as $node) {
-        $outputs[] = $node->toText($separator, $strip);
+        $outputs[] = $whitespace === 'preserve'
+            ? Text::extractableRawText($node)
+            : $node->toText();
     }
-    fwrite(STDOUT, implode("\n", $outputs) . PHP_EOL);
+    $recordSeparator = $separatorExplicit ? (string)$separator : "\n";
+    fwrite(STDOUT, implode($recordSeparator, $outputs) . PHP_EOL);
     exit(0);
 }
 
@@ -456,7 +548,8 @@ if ($format === 'markdown') {
     foreach ($nodes as $node) {
         $outputs[] = $node->toMarkdown();
     }
-    fwrite(STDOUT, implode("\n\n", $outputs) . PHP_EOL);
+    $recordSeparator = $separatorExplicit ? (string)$separator : "\n\n";
+    fwrite(STDOUT, implode($recordSeparator, $outputs) . PHP_EOL);
     exit(0);
 }
 

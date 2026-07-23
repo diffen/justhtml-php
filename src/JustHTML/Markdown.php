@@ -284,7 +284,7 @@ final class Markdown
             if ($builder->hasOutput()) {
                 $builder->ensureNewlines(2);
             }
-            $code = $node->toText('', false);
+            $code = Text::extractableRawText($node);
             $builder->raw('```');
             $builder->newline(1);
             if ($code !== '') {
@@ -297,7 +297,7 @@ final class Markdown
         }
 
         if ($tag === 'code' && !$preserveWhitespace) {
-            $code = $node->toText('', false);
+            $code = Text::extractableRawText($node);
             $builder->raw(self::markdownCodeSpan($code));
             return;
         }

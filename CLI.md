@@ -37,7 +37,9 @@ cat > whitespace.html <<'HTML'
 <!doctype html>
 <html><body>
   <p class="sep">Alpha<span>Beta</span>Gamma</p>
-  <p class="ws">  Hello <span> world </span> ! </p>
+  <pre class="ws">
+  Hello
+    world</pre>
 </body></html>
 HTML
 ```
@@ -148,10 +150,17 @@ lead	__MISSING__
 __MISSING__	__MISSING__
 ```
 
-Use `--separator` to change the field separator:
+Use `--field-separator` to change the field separator:
 
 ```sh
-php bin/justhtml sample.html --selector "p" --attr class --attr id --separator ","
+php bin/justhtml sample.html --selector "p" --attr class --attr id --field-separator ","
+```
+
+Output:
+
+```text
+lead,__MISSING__
+__MISSING__,__MISSING__
 ```
 
 `--attr` cannot be combined with `--format`, `--inner`, `--outer`, or `--count`.
@@ -212,12 +221,48 @@ Output:
 2
 ```
 
-`--count` cannot be combined with `--first`, `--limit`, `--format`, or `--attr`.
+`--count` cannot be combined with `--first`, `--limit`, `--format`, `--attr`,
+or `--separator`.
 
 ## --separator
 
-Join text nodes with a custom separator (text output only). In `--attr` mode,
-this controls the field separator (default: tab).
+Join separate matched output records. It is never inserted between descendant
+text nodes. The default is a newline for HTML, text, and attribute rows, and a
+blank line for Markdown.
+
+```sh
+php bin/justhtml sample.html --selector "p" --format text --separator '\n\n'
+```
+
+Output:
+
+```text
+Hello world!
+
+Second para.
+```
+
+Separator values decode `\n`, `\r`, `\t`, `\\`, and `\0`. Unknown escapes
+are rejected. Use single shell quotes so the escape reaches `justhtml`; a
+literal backslash must itself be escaped.
+
+## --field-separator
+
+Join fields produced by repeated `--attr` options. The default is a tab.
+`--field-separator` requires at least one `--attr` option.
+
+```sh
+php bin/justhtml sample.html --selector "p" \
+  --attr class --attr id --field-separator ','
+```
+
+## --whitespace
+
+Choose `normalize` or `preserve` for text output. The default, `normalize`,
+concatenates DOM text first, collapses HTML whitespace runs to one space, and
+trims the complete result. Inline markup therefore does not create spaces
+before punctuation or remove required word spacing.
+`--whitespace` can only be used with `--format text`.
 
 ```sh
 php bin/justhtml whitespace.html --selector ".sep" --format text
@@ -226,47 +271,29 @@ php bin/justhtml whitespace.html --selector ".sep" --format text
 Output:
 
 ```text
-Alpha Beta Gamma
-```
-
-```sh
-php bin/justhtml whitespace.html --selector ".sep" --format text --separator ""
-```
-
-Output:
-
-```text
 AlphaBetaGamma
 ```
 
-## --strip / --no-strip
+No space is inserted between `Alpha`, `Beta`, and `Gamma` because the source
+contains no whitespace at those inline-element boundaries.
 
-By default, each text node is trimmed and empty nodes are dropped (`--strip`).
-Use `--no-strip` to preserve the original whitespace within text nodes.
-
-Default (strip on):
+Use `preserve` for parsed DOM whitespace:
 
 ```sh
-php bin/justhtml whitespace.html --selector ".ws" --format text
+php bin/justhtml whitespace.html --selector ".ws" \
+  --format text --whitespace preserve
 ```
 
 Output:
 
 ```text
-Hello world !
+  Hello
+    world
 ```
 
-Preserve whitespace:
-
-```sh
-php bin/justhtml whitespace.html --selector ".ws" --format text --no-strip
-```
-
-Output (spaces shown between `|` markers):
-
-```text
-|  Hello   world   ! |
-```
+Preservation refers to the parsed DOM, not the original source bytes. HTML
+parsing has already decoded character references, normalized carriage returns,
+and removed the initial line feed after `pre` and `textarea`.
 
 ## Stdin
 
@@ -282,39 +309,49 @@ Output:
 Hello world!
 ```
 
-## Piping examples (real pages)
+## Wikipedia fixture examples
 
-These examples use a live page and pipe HTML into `justhtml`.
+These examples use the committed Wikipedia snapshot, so they are deterministic
+and work without a network connection:
 
 ```sh
-# Extract the first non-empty paragraph as text
-curl -s https://en.wikipedia.org/wiki/Earth | \
-  php bin/justhtml - --selector "#mw-content-text p:not(:empty)" --format text --first
+# Extract Earth's lead paragraph
+php bin/justhtml examples/fixtures/wikipedia-earth.html \
+  --selector "#mw-content-text p:not(.mw-empty-elt)" --first --format text
 
 # Extract links from the lead section (first 10 hrefs)
-curl -s https://en.wikipedia.org/wiki/Earth | \
-  php bin/justhtml - --selector "#mw-content-text p a" --attr href --limit 10 --separator "\n"
+php bin/justhtml examples/fixtures/wikipedia-earth.html \
+  --selector "#mw-content-text p:not(.mw-empty-elt) a" --attr href --limit 10
 
-# Get the lead section as Markdown
+# Get the lead paragraph as Markdown
+php bin/justhtml examples/fixtures/wikipedia-earth.html \
+  --selector "#mw-content-text p:not(.mw-empty-elt)" --format markdown --first
+```
+
+## Piping examples (live pages)
+
+Pass `-` as the input path to pipe a downloaded page into `justhtml`:
+
+```sh
+# Extract the first paragraph in Wikipedia's main content
 curl -s https://en.wikipedia.org/wiki/Earth | \
-  php bin/justhtml - --selector "#mw-content-text" --format markdown --first
+  php bin/justhtml - --selector "#mw-content-text p" --first --format text
+
+# Extract the first 10 links found in main-content paragraphs
+curl -s https://en.wikipedia.org/wiki/Earth | \
+  php bin/justhtml - --selector "#mw-content-text p a" --attr href --limit 10
 
 # Count images on the page
 curl -s https://en.wikipedia.org/wiki/Earth | \
   php bin/justhtml - --selector "img" --count
 
-# Output the infobox as HTML (outer HTML)
+# Build a quick table of contents from the first five headings
 curl -s https://en.wikipedia.org/wiki/Earth | \
-  php bin/justhtml - --selector "table.infobox" --format html --outer --first
-
-# Preserve whitespace and separate paragraphs
-curl -s https://en.wikipedia.org/wiki/Earth | \
-  php bin/justhtml - --selector "#mw-content-text p" --format text --no-strip --separator "\n\n" --limit 3
-
-# Build a quick table of contents from headings
-curl -s https://en.wikipedia.org/wiki/Earth | \
-  php bin/justhtml - --selector "#mw-content-text h2, #mw-content-text h3" --format text --separator "\n"
+  php bin/justhtml - --selector "h2, h3" --format text --limit 5
 ```
+
+Live sites change their markup. If an example stops matching, inspect the
+current page and adjust its selector.
 
 ## --version and --help
 
@@ -352,6 +389,18 @@ This choice changes performance only; selector results and exit behavior remain
 the same. A selector that looks selective but is absent may still be slower on
 the targeted path because absence cannot be known before reaching the end of
 the document.
+
+When an ID or class selector targets a known element type, include the tag:
+
+```sh
+php bin/justhtml tests/fixtures/text-inline-boundaries.html \
+  --selector "p#mwpw" --first --format text
+```
+
+Tag qualification can allow the result to be released earlier. A bare
+attribute-dependent selector such as `#lead` could still match an earlier
+`html` or `body` element whose missing attributes are supplied by a later
+start tag, so the parser may need to hold that result until the end of input.
 
 Passing HTML on stdin changes only where input comes from. The CLI reads the
 complete input into memory before either parsing path starts.

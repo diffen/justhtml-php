@@ -13,9 +13,14 @@ fi
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fixture="examples/fixtures/wikipedia-earth.html"
+text_fixture="tests/fixtures/text-inline-boundaries.html"
 
 if [ ! -f "${root_dir}/${fixture}" ]; then
   echo "Missing fixture: ${fixture}" >&2
+  exit 1
+fi
+if [ ! -f "${root_dir}/${text_fixture}" ]; then
+  echo "Missing fixture: ${text_fixture}" >&2
   exit 1
 fi
 
@@ -105,7 +110,36 @@ for v in "${versions[@]}"; do
   assert_eq "Earth - Wikipedia" "$out"
   record_output "text_title_full_query_fallback" "$out"
 
-  # --attr / --missing / --separator
+  # Normalized and preserved text
+  out="$(run_php bin/justhtml "${text_fixture}" --selector "p#mwpw" --format text --first)"
+  assert_eq "Earth is the third planet and is known to harbor life. This is made possible by Earth being an ocean world, the only one with surface water." "$out"
+  record_output "text_inline_boundaries" "$out"
+  out="$(run_php bin/justhtml "${text_fixture}" --selector "p.record" --format text --separator "\\n\\n")"
+  assert_eq "Alpha
+
+Beta" "$out"
+  record_output "text_record_separator" "$out"
+  out="$(run_php bin/justhtml "${text_fixture}" --selector "p.whitespace" --format text --first)"
+  assert_eq "" "$out"
+  record_output "text_whitespace_normalized" "$out"
+  out="$(run_php bin/justhtml "${text_fixture}" --selector "p.whitespace" --format text --whitespace preserve --first)"
+  assert_eq "   	  " "$out"
+  record_output "text_whitespace_preserved" "$out"
+
+  # Record separators also apply to HTML.
+  out="$(run_php bin/justhtml "${text_fixture}" --selector "span.chunk" --format html --separator "|")"
+  assert_eq '<span class=chunk>A</span>|<span class=chunk>B</span>' "$out"
+  record_output "html_record_separator" "$out"
+  out="$(run_php bin/justhtml "${text_fixture}" --selector "p.record" --format markdown --separator "|")"
+  assert_eq 'Alpha|Beta' "$out"
+  record_output "markdown_record_separator" "$out"
+
+  out="$(run_php bin/justhtml "${text_fixture}" --selector "a.fields" --attr href --attr rel --field-separator ",")"
+  assert_eq "/a,next
+/b,__MISSING__" "$out"
+  record_output "attr_record_and_field_separators" "$out"
+
+  # --attr / --missing / --field-separator
   out="$(run_php bin/justhtml "${fixture}" --selector "a.mw-jump-link" --attr href --first)"
   assert_eq "#bodyContent" "$out"
   record_output "attr_href" "$out"
@@ -118,9 +152,9 @@ for v in "${versions[@]}"; do
   out="$(run_php bin/justhtml "${fixture}" --selector "a.mw-jump-link" --attr href --attr rel --missing NA --first)"
   assert_eq "#bodyContent	NA" "$out"
   record_output "attr_href_rel_missing_override" "$out"
-  out="$(run_php bin/justhtml "${fixture}" --selector "a.mw-jump-link" --attr href --attr rel --separator "," --first)"
+  out="$(run_php bin/justhtml "${fixture}" --selector "a.mw-jump-link" --attr href --attr rel --field-separator "," --first)"
   assert_eq "#bodyContent,__MISSING__" "$out"
-  record_output "attr_separator" "$out"
+  record_output "attr_field_separator" "$out"
 
   # Conflict checks
   if run_sh "php bin/justhtml ${fixture} --selector 'p' --count --format text" >/dev/null 2>&1; then
@@ -131,6 +165,24 @@ for v in "${versions[@]}"; do
   fi
   if run_sh "php bin/justhtml ${fixture} --selector 'p' --first --limit 2" >/dev/null 2>&1; then
     fail "--first should fail with --limit"
+  fi
+  if run_sh "php bin/justhtml ${fixture} --selector 'p' --count --separator ','" >/dev/null 2>&1; then
+    fail "--count should fail with --separator"
+  fi
+  if run_sh "php bin/justhtml ${fixture} --selector 'p' --format html --whitespace preserve" >/dev/null 2>&1; then
+    fail "--whitespace should require --format text"
+  fi
+  if run_sh "php bin/justhtml ${fixture} --selector 'p' --field-separator ','" >/dev/null 2>&1; then
+    fail "--field-separator should require --attr"
+  fi
+  if run_sh "php bin/justhtml ${fixture} --selector 'p' --format text --strip" >/dev/null 2>&1; then
+    fail "--strip should be rejected"
+  fi
+  if run_sh "php bin/justhtml ${fixture} --selector 'p' --format text --no-strip" >/dev/null 2>&1; then
+    fail "--no-strip should be rejected"
+  fi
+  if run_sh "php bin/justhtml ${fixture} --selector 'p' --format text --separator '\\d'" >/dev/null 2>&1; then
+    fail "unknown separator escapes should be rejected"
   fi
 
   # --limit validation messages

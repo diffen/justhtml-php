@@ -112,9 +112,10 @@ For supported selectors, matches have the same order, attributes, text, and
 descendants that regular `query()` would return, including on malformed HTML.
 
 Each result contains the selected element and its descendants, but not ancestors
-outside the match. Attribute access, serialization, `toText()`, `toMarkdown()`,
-and descendant `query()`/`queryFirst()` calls work. Treat results as read-only
-while iterating; changing one result can affect another overlapping result.
+outside the match. Attribute access, DOM-compatible `textContent`, normalized
+`toText()`, serialization, `toMarkdown()`, and descendant
+`query()`/`queryFirst()` calls work. Treat results as read-only while iterating;
+changing one result can affect another overlapping result.
 
 ### Performance characteristics
 

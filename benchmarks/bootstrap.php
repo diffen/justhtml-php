@@ -12,6 +12,7 @@ if (file_exists($autoload)) {
 
 $required = [
     'Str.php',
+    'Text.php',
     'Errors.php',
     'Constants.php',
     'Entities.php',

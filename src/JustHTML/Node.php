@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace JustHTML;
 
+/**
+ * @property-read string $text
+ * @property-read string|null $textContent
+ */
 class SimpleDomNode
 {
     public string $name;
@@ -204,8 +208,27 @@ class SimpleDomNode
         if ($name === 'text') {
             return $this->getText();
         }
+        if ($name === 'textContent') {
+            return Text::domTextContent($this);
+        }
         trigger_error('Undefined property: ' . get_class($this) . '::$' . $name, E_USER_NOTICE);
         return null;
+    }
+
+    public function __isset(string $name): bool
+    {
+        if ($name === 'textContent') {
+            return Text::domTextContent($this) !== null;
+        }
+        return false;
+    }
+
+    public function __set(string $name, $value): void
+    {
+        if ($name === 'textContent') {
+            throw new \LogicException('textContent is read-only');
+        }
+        $this->{$name} = $value;
     }
 
     public function toHtml(int $indent = 0, int $indentSize = 2, bool $pretty = true): string
@@ -234,41 +257,12 @@ class SimpleDomNode
         return Serialize::toTestFormat($this, $indent);
     }
 
-    public function toText(string $separator = ' ', bool $strip = true): string
+    public function toText(): string
     {
-        $parts = [];
-        $this->collectText($this, $parts, $strip);
-        if (!$parts) {
-            return '';
+        if (func_num_args() !== 0) {
+            throw new \ArgumentCountError('toText() no longer accepts $separator or $strip');
         }
-        return implode($separator, $parts);
-    }
-
-    private function collectText($node, array &$parts, bool $strip): void
-    {
-        $name = $node->name;
-        if ($name === '#text') {
-            $data = $node->data;
-            if (!is_string($data) || $data === '') {
-                return;
-            }
-            $text = $strip ? trim($data) : $data;
-            if ($text === '') {
-                return;
-            }
-            $parts[] = $text;
-            return;
-        }
-
-        if (!empty($node->children)) {
-            foreach ($node->children as $child) {
-                $this->collectText($child, $parts, $strip);
-            }
-        }
-
-        if ($node instanceof ElementNode && $node->templateContent !== null) {
-            $this->collectText($node->templateContent, $parts, $strip);
-        }
+        return Text::normalizeHtmlWhitespace(Text::extractableRawText($this));
     }
 
     public function toMarkdown(): string
@@ -338,6 +332,10 @@ final class TemplateNode extends ElementNode
     }
 }
 
+/**
+ * @property-read string $text
+ * @property-read string $textContent
+ */
 final class TextNode
 {
     public ?string $data;
@@ -362,16 +360,35 @@ final class TextNode
         if ($name === 'text') {
             return $this->getText();
         }
+        if ($name === 'textContent') {
+            return Text::domTextContent($this);
+        }
         trigger_error('Undefined property: ' . get_class($this) . '::$' . $name, E_USER_NOTICE);
         return null;
     }
 
-    public function toText(string $separator = ' ', bool $strip = true): string
+    public function __isset(string $name): bool
     {
-        if ($this->data === null) {
-            return '';
+        if ($name === 'textContent') {
+            return Text::domTextContent($this) !== null;
         }
-        return $strip ? trim($this->data) : $this->data;
+        return false;
+    }
+
+    public function __set(string $name, $value): void
+    {
+        if ($name === 'textContent') {
+            throw new \LogicException('textContent is read-only');
+        }
+        $this->{$name} = $value;
+    }
+
+    public function toText(): string
+    {
+        if (func_num_args() !== 0) {
+            throw new \ArgumentCountError('toText() no longer accepts $separator or $strip');
+        }
+        return Text::normalizeHtmlWhitespace(Text::extractableRawText($this));
     }
 
     public function toHtml(int $indent = 0, int $indentSize = 2, bool $pretty = true): string

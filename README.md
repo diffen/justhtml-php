@@ -53,25 +53,70 @@ require_once __DIR__ . '/vendor/autoload.php';
 
 use JustHTML\JustHTML;
 
-$html = '<article><h1>Title</h1><p class="lead">Intro</p><a href="/a">Read</a></article>';
+$html = '<article><h1>Title</h1><p class="lead">Earth is a <a href="/planet">planet</a>.</p></article>';
 $doc = new JustHTML($html);
 
-$title = $doc->query('h1')[0]->toText();
-$lead = $doc->query('p.lead')[0]->toText();
-$link = $doc->query('a')[0]->attrs['href'] ?? '';
+$title = $doc->queryFirst('h1');
+$lead = $doc->queryFirst('p.lead');
 
-echo $title . "\n";
-echo $lead . "\n";
-echo $link . "\n";
+if ($title === null || $lead === null) {
+    throw new RuntimeException('Expected content was not found');
+}
+
+echo $title->toText() . "\n";
+echo $lead->toText() . "\n";
 ```
 
 Expected output:
 
 ```text
 Title
-Intro
-/a
+Earth is a planet.
 ```
+
+## Text extraction
+
+`toText()` returns normalized human-readable text. `textContent` returns the
+exact text stored in the parsed DOM:
+
+```php
+$html = <<<'HTML'
+<p id="lead">
+  Earth is a <a href="/planet">planet</a>.
+</p>
+HTML;
+
+$doc = new JustHTML($html);
+$node = $doc->queryFirst('#lead');
+
+if ($node === null) {
+    throw new RuntimeException('Lead paragraph was not found');
+}
+
+echo $node->toText() . "\n";
+echo json_encode($node->textContent) . "\n";
+```
+
+Output:
+
+```text
+Earth is a planet.
+"\n  Earth is a planet.\n"
+```
+
+`toText()` concatenates DOM text first, collapses HTML whitespace runs to one
+space, and trims the complete result. It takes no arguments.
+
+The read-only `textContent` property follows the DOM `Node.textContent`
+contract. It does not trim, collapse whitespace, or add separators at element
+boundaries. It includes script, style, and hidden text; `br` and block elements
+do not add line breaks. Document and doctype nodes return `null`. Template
+contents are available through
+`$template->templateContent->textContent`, not
+`$template->textContent`.
+
+Run [examples/text.php](examples/text.php) for a complete example of normalized
+text, DOM text content, and template content.
 
 ## CSS selectors
 
@@ -180,8 +225,8 @@ php bin/justhtml examples/fixtures/wikipedia-earth.html \
 # Pipe HTML via stdin and extract markdown from an article.
 curl -s https://example.com | php bin/justhtml - --selector "article" --format markdown
 
-# Preserve whitespace when extracting text.
-php bin/justhtml page.html --selector "pre" --format text --no-strip --separator ""
+# Preserve parsed DOM whitespace when extracting text.
+php bin/justhtml page.html --selector "pre" --format text --whitespace preserve
 ```
 
 ## Comparison to other parsers

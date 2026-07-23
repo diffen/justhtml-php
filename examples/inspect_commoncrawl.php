@@ -39,17 +39,16 @@ if ($html === false) {
 $doc = new JustHTML($html);
 
 // Set a breakpoint here to inspect $doc and the nodes below in the debugger.
-$titleNodes = $doc->query('title');
-$headingNodes = $doc->query('h1, h2, h3');
+$titleNode = $doc->queryFirst('title');
+$headingNode = $doc->queryFirst('h1, h2, h3');
 $linkNodes = $doc->query('a[href]');
-$metaDescription = $doc->query('meta[name="description"]');
+$metaDescription = $doc->queryFirst('meta[name="description"]');
 
-$title = $titleNodes ? $titleNodes[0]->toText() : '';
-$heading = $headingNodes ? $headingNodes[0]->toText() : '';
-$description = '';
-if ($metaDescription) {
-    $description = $metaDescription[0]->attrs['content'] ?? '';
-}
+$title = $titleNode !== null ? $titleNode->toText() : '';
+$heading = $headingNode !== null ? $headingNode->toText() : '';
+$description = $metaDescription !== null
+    ? (string)($metaDescription->attrs['content'] ?? '')
+    : '';
 
 echo "File: {$path}\n";
 echo "Bytes: " . strlen($html) . "\n";

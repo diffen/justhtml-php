@@ -7,6 +7,28 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-23
+
+- Redesign text extraction so `toText()` concatenates DOM text before
+  normalizing whitespace. Inline markup no longer introduces spaces before
+  punctuation or removes required spacing between words.
+- Add a read-only, DOM-compatible `textContent` property for nodes that need
+  exact parsed text without whitespace normalization, including the DOM
+  behavior for documents, doctypes, and template contents.
+- **Breaking:** `toText()` no longer accepts separator or stripping arguments.
+  Use zero-argument `toText()` for normalized human-readable text and
+  `textContent` for unnormalized DOM text.
+- **Breaking:** replace the CLI's `--strip` and `--no-strip` flags with
+  `--whitespace normalize|preserve`. Text output now uses `--separator` only
+  between matched records, rather than between descendant text nodes.
+- Add `--field-separator` for repeated `--attr` values and decode `\n`, `\r`,
+  `\t`, `\\`, and `\0` escapes in CLI separator values.
+- Expand text-output and CLI regression coverage across the full-query and
+  targeted-selector paths, including inline punctuation, whitespace-only
+  matches, templates, scripts, styles, and multiple output records.
+- Rewrite the README, CLI guide, and PHP examples around the new text model,
+  with deterministic fixture-based commands and clearer newcomer guidance.
+
 ## [0.2.0] - 2026-07-22
 
 - Add `Stream::select()` and `Stream::selectFirst()` for crawlers that need one

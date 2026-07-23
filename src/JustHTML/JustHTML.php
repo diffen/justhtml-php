@@ -104,9 +104,12 @@ final class JustHTML
         return $this->root->toHtml(0, $indent_size, $pretty);
     }
 
-    public function toText(string $separator = ' ', bool $strip = true): string
+    public function toText(): string
     {
-        return $this->root->toText($separator, $strip);
+        if (func_num_args() !== 0) {
+            throw new \ArgumentCountError('toText() no longer accepts $separator or $strip');
+        }
+        return $this->root->toText();
     }
 
     public function toMarkdown(): string
